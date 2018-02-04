@@ -74,11 +74,18 @@ struct HasMain {
   enum Bool { Yes, No };
 };
 
+enum PackageMode {
+  NONE,
+  CJS,
+  ESM
+};
+
 struct PackageConfig {
   const Exists::Bool exists;
   const IsValid::Bool is_valid;
   const HasMain::Bool has_main;
   const std::string main;
+  const PackageMode mode;
 };
 }  // namespace loader
 
@@ -160,6 +167,8 @@ struct PackageConfig {
   V(env_pairs_string, "envPairs")                                             \
   V(errno_string, "errno")                                                    \
   V(error_string, "error")                                                    \
+  V(esm_string, "esm")                                                        \
+  V(exiting_string, "_exiting")                                               \
   V(exit_code_string, "exitCode")                                             \
   V(expire_string, "expire")                                                  \
   V(exponent_string, "exponent")                                              \
@@ -201,6 +210,7 @@ struct PackageConfig {
   V(message_port_string, "messagePort")                                       \
   V(message_port_constructor_string, "MessagePort")                           \
   V(minttl_string, "minttl")                                                  \
+  V(mode_string, "mode")                                                      \
   V(modulus_string, "modulus")                                                \
   V(name_string, "name")                                                      \
   V(netmask_string, "netmask")                                                \
