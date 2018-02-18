@@ -74,10 +74,12 @@ struct HasMain {
   enum Bool { Yes, No };
 };
 
-enum PackageMode {
-  NONE,
-  CJS,
-  ESM
+struct PackageMode {
+  enum Mode {
+    NONE,
+    CJS,
+    ESM
+  };
 };
 
 struct PackageConfig {
@@ -85,7 +87,7 @@ struct PackageConfig {
   const IsValid::Bool is_valid;
   const HasMain::Bool has_main;
   const std::string main;
-  const PackageMode mode;
+  const PackageMode::Mode mode;
 };
 }  // namespace loader
 
