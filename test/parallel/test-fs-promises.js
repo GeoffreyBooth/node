@@ -10,7 +10,9 @@ const fsPromises = fs.promises;
 const {
   access,
   chmod,
+  chown,
   copyFile,
+  lchown,
   link,
   lchmod,
   lstat,
@@ -27,12 +29,16 @@ const {
   symlink,
   truncate,
   unlink,
-  utimes
+  utimes,
+  writeFile
 } = fsPromises;
 
 const tmpDir = tmpdir.path;
 
-common.crashOnUnhandledRejection();
+let dirc = 0;
+function nextdir() {
+  return `test${++dirc}`;
+}
 
 // fs.promises should not be enumerable as long as it causes a warning to be
 // emitted.
@@ -40,8 +46,7 @@ assert.strictEqual(Object.keys(fs).includes('promises'), false);
 
 {
   access(__filename, 'r')
-    .then(common.mustCall())
-    .catch(common.mustNotCall());
+    .then(common.mustCall());
 
   access('this file does not exist', 'r')
     .then(common.mustNotCall())
@@ -110,6 +115,33 @@ function verifyStatObject(stat) {
     await chmod(dest, (0o10777));
     await handle.chmod(0o10777);
 
+    if (!common.isWindows) {
+      await chown(dest, process.getuid(), process.getgid());
+      await handle.chown(process.getuid(), process.getgid());
+    }
+
+    assert.rejects(
+      async () => {
+        await chown(dest, 1, -1);
+      },
+      {
+        code: 'ERR_OUT_OF_RANGE',
+        name: 'RangeError [ERR_OUT_OF_RANGE]',
+        message: 'The value of "gid" is out of range. ' +
+                 'It must be >= 0 && < 4294967296. Received -1'
+      });
+
+    assert.rejects(
+      async () => {
+        await handle.chown(1, -1);
+      },
+      {
+        code: 'ERR_OUT_OF_RANGE',
+        name: 'RangeError [ERR_OUT_OF_RANGE]',
+        message: 'The value of "gid" is out of range. ' +
+                  'It must be >= 0 && < 4294967296. Received -1'
+      });
+
     await utimes(dest, new Date(), new Date());
 
     try {
@@ -133,6 +165,9 @@ function verifyStatObject(stat) {
     if (common.canCreateSymLink()) {
       const newLink = path.resolve(tmpDir, 'baz3.js');
       await symlink(newPath, newLink);
+      if (!common.isWindows) {
+        await lchown(newLink, process.getuid(), process.getgid());
+      }
       stats = await lstat(newLink);
       verifyStatObject(stats);
 
@@ -140,14 +175,25 @@ function verifyStatObject(stat) {
                          (await realpath(newLink)).toLowerCase());
       assert.strictEqual(newPath.toLowerCase(),
                          (await readlink(newLink)).toLowerCase());
+
+      const newMode = 0o666;
       if (common.isOSX) {
         // lchmod is only available on macOS
-        const newMode = 0o666;
         await lchmod(newLink, newMode);
         stats = await lstat(newLink);
         assert.strictEqual(stats.mode & 0o777, newMode);
+      } else {
+        await Promise.all([
+          assert.rejects(
+            lchmod(newLink, newMode),
+            common.expectsError({
+              code: 'ERR_METHOD_NOT_IMPLEMENTED',
+              type: Error,
+              message: 'The lchmod() method is not implemented'
+            })
+          )
+        ]);
       }
-
 
       await unlink(newLink);
     }
@@ -161,11 +207,48 @@ function verifyStatObject(stat) {
     await mkdir(newdir);
     stats = await stat(newdir);
     assert(stats.isDirectory());
-
     const list = await readdir(tmpDir);
     assert.deepStrictEqual(list, ['baz2.js', 'dir']);
-
     await rmdir(newdir);
+
+    // mkdirp when folder does not yet exist.
+    {
+      const dir = path.join(tmpDir, nextdir(), nextdir());
+      await mkdir(dir, { recursive: true });
+      stats = await stat(dir);
+      assert(stats.isDirectory());
+    }
+
+    // mkdirp when path is a file.
+    {
+      const dir = path.join(tmpDir, nextdir(), nextdir());
+      await mkdir(path.dirname(dir));
+      await writeFile(dir);
+      try {
+        await mkdir(dir, { recursive: true });
+        throw new Error('unreachable');
+      } catch (err) {
+        assert.notStrictEqual(err.message, 'unreachable');
+        assert.strictEqual(err.code, 'EEXIST');
+        assert.strictEqual(err.syscall, 'mkdir');
+      }
+    }
+
+    // mkdirp ./
+    {
+      const dir = path.resolve(tmpDir, `${nextdir()}/./${nextdir()}`);
+      await mkdir(dir, { recursive: true });
+      stats = await stat(dir);
+      assert(stats.isDirectory());
+    }
+
+    // mkdirp ../
+    {
+      const dir = path.resolve(tmpDir, `${nextdir()}/../${nextdir()}`);
+      await mkdir(dir, { recursive: true });
+      stats = await stat(dir);
+      assert(stats.isDirectory());
+    }
 
     await mkdtemp(path.resolve(tmpDir, 'FOO'));
     assert.rejects(

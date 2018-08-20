@@ -37,10 +37,10 @@ the elements of the API that are required to *implement* new types of streams.
 
 There are four fundamental stream types within Node.js:
 
-* [`Readable`][] - streams from which data can be read (for example
-  [`fs.createReadStream()`][]).
 * [`Writable`][] - streams to which data can be written (for example
   [`fs.createWriteStream()`][]).
+* [`Readable`][] - streams from which data can be read (for example
+  [`fs.createReadStream()`][]).
 * [`Duplex`][] - streams that are both `Readable` and `Writable` (for example
   [`net.Socket`][]).
 * [`Transform`][] - `Duplex` streams that can modify or transform the data as it
@@ -363,6 +363,7 @@ See also: [`writable.uncork()`][].
 added: v8.0.0
 -->
 
+* `error` {Error}
 * Returns: {this}
 
 Destroy the stream, and emit the passed `'error'` and a `'close'` event.
@@ -637,7 +638,7 @@ state, attaching a listener for the `'data'` event, calling the
 `readable.readableFlowing` to `true`, causing the `Readable` to begin
 actively emitting events as data is generated.
 
-Calling `readable.pause()`, `readable.unpipe()`, or receiving "back pressure"
+Calling `readable.pause()`, `readable.unpipe()`, or receiving backpressure
 will cause the `readable.readableFlowing` to be set as `false`,
 temporarily halting the flowing of events but *not* halting the generation of
 data. While in this state, attaching a listener for the `'data'` event
@@ -894,8 +895,8 @@ added: v0.9.4
 * `destination` {stream.Writable} The destination for writing data
 * `options` {Object} Pipe options
   * `end` {boolean} End the writer when the reader ends. **Default:** `true`.
-* Returns: {stream.Writable} making it possible to set up chains of piped
-  streams
+* Returns: {stream.Writable} The *destination*, allowing for a chain of pipes if
+  it is a [`Duplex`][] or a [`Transform`][] stream
 
 The `readable.pipe()` method attaches a [`Writable`][] stream to the `readable`,
 causing it to switch automatically into flowing mode and push all of its data
@@ -1285,6 +1286,7 @@ Examples of `Transform` streams include:
 <!-- YAML
 added: v8.0.0
 -->
+* `error` {Error}
 
 Destroy the stream, and emit `'error'`. After this call, the
 transform stream would release any internal resources.
@@ -1419,77 +1421,12 @@ class MyWritable extends Writable {
 The new stream class must then implement one or more specific methods, depending
 on the type of stream being created, as detailed in the chart below:
 
-<table>
-  <thead>
-    <tr>
-      <th>
-        <p>Use-case</p>
-      </th>
-      <th>
-        <p>Class</p>
-      </th>
-      <th>
-        <p>Method(s) to implement</p>
-      </th>
-    </tr>
-  </thead>
-  <tr>
-    <td>
-      <p>Reading only</p>
-    </td>
-    <td>
-      <p>[`Readable`](#stream_class_stream_readable)</p>
-    </td>
-    <td>
-      <p><code>[_read][stream-_read]</code></p>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <p>Writing only</p>
-    </td>
-    <td>
-      <p>[`Writable`](#stream_class_stream_writable)</p>
-    </td>
-    <td>
-      <p>
-        <code>[_write][stream-_write]</code>,
-        <code>[_writev][stream-_writev]</code>,
-        <code>[_final][stream-_final]</code>
-      </p>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <p>Reading and writing</p>
-    </td>
-    <td>
-      <p>[`Duplex`](#stream_class_stream_duplex)</p>
-    </td>
-    <td>
-      <p>
-        <code>[_read][stream-_read]</code>,
-        <code>[_write][stream-_write]</code>,
-        <code>[_writev][stream-_writev]</code>,
-        <code>[_final][stream-_final]</code></p>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <p>Operate on written data, then read the result</p>
-    </td>
-    <td>
-      <p>[`Transform`](#stream_class_stream_transform)</p>
-    </td>
-    <td>
-      <p>
-        <code>[_transform][stream-_transform]</code>,
-        <code>[_flush][stream-_flush]</code>,
-        <code>[_final][stream-_final]</code>
-      </p>
-    </td>
-  </tr>
-</table>
+| Use-case | Class | Method(s) to implement |
+| -------- | ----- | ---------------------- |
+| Reading only | [`Readable`] | <code>[_read][stream-_read]</code> |
+| Writing only | [`Writable`] | <code>[_write][stream-_write]</code>, <code>[_writev][stream-_writev]</code>, <code>[_final][stream-_final]</code> |
+| Reading and writing | [`Duplex`] | <code>[_read][stream-_read]</code>, <code>[_write][stream-_write]</code>, <code>[_writev][stream-_writev]</code>, <code>[_final][stream-_final]</code> |
+| Operate on written data, then read the result | [`Transform`] | <code>[_transform][stream-_transform]</code>, <code>[_flush][stream-_flush]</code>, <code>[_final][stream-_final]</code> |
 
 The implementation code for a stream should *never* call the "public" methods
 of a stream that are intended for use by consumers (as described in the

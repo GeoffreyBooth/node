@@ -155,10 +155,12 @@ class Parser : public AsyncWrap, public StreamListener {
   }
 
 
-  size_t self_size() const override {
-    return sizeof(*this);
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+    tracker->TrackField("current_buffer", current_buffer_);
   }
 
+  ADD_MEMORY_INFO_NAME(Parser)
 
   int on_message_begin() {
     num_fields_ = num_values_ = 0;
@@ -773,4 +775,4 @@ void Initialize(Local<Object> target,
 }  // anonymous namespace
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(http_parser, node::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(http_parser, node::Initialize)

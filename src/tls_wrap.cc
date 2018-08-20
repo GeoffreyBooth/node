@@ -60,8 +60,6 @@ TLSWrap::TLSWrap(Environment* env,
       SSLWrap<TLSWrap>(env, sc, kind),
       StreamBase(env),
       sc_(sc),
-      enc_in_(nullptr),
-      enc_out_(nullptr),
       write_size_(0),
       started_(false),
       established_(false),
@@ -86,8 +84,6 @@ TLSWrap::TLSWrap(Environment* env,
 
 
 TLSWrap::~TLSWrap() {
-  enc_in_ = nullptr;
-  enc_out_ = nullptr;
   sc_ = nullptr;
 }
 
@@ -112,11 +108,9 @@ void TLSWrap::NewSessionDoneCb() {
 
 
 void TLSWrap::InitSSL() {
-  // Initialize SSL
-  enc_in_ = crypto::NodeBIO::New();
-  enc_out_ = crypto::NodeBIO::New();
-  crypto::NodeBIO::FromBIO(enc_in_)->AssignEnvironment(env());
-  crypto::NodeBIO::FromBIO(enc_out_)->AssignEnvironment(env());
+  // Initialize SSL – OpenSSL takes ownership of these.
+  enc_in_ = crypto::NodeBIO::New(env()).release();
+  enc_out_ = crypto::NodeBIO::New(env()).release();
 
   SSL_set_bio(ssl_.get(), enc_in_, enc_out_);
 
@@ -758,6 +752,8 @@ void TLSWrap::DestroySSL(const FunctionCallbackInfo<Value>& args) {
 
   // Destroy the SSL structure and friends
   wrap->SSLWrap<TLSWrap>::DestroySSL();
+  wrap->enc_in_ = nullptr;
+  wrap->enc_out_ = nullptr;
 
   if (wrap->stream_ != nullptr)
     wrap->stream_->RemoveStreamListener(wrap);
@@ -864,6 +860,17 @@ void TLSWrap::GetWriteQueueSize(const FunctionCallbackInfo<Value>& info) {
 }
 
 
+void TLSWrap::MemoryInfo(MemoryTracker* tracker) const {
+  tracker->TrackThis(this);
+  tracker->TrackField("error", error_);
+  tracker->TrackField("pending_cleartext_input", pending_cleartext_input_);
+  if (enc_in_ != nullptr)
+    tracker->TrackField("enc_in", crypto::NodeBIO::FromBIO(enc_in_));
+  if (enc_out_ != nullptr)
+    tracker->TrackField("enc_out", crypto::NodeBIO::FromBIO(enc_out_));
+}
+
+
 void TLSWrap::Initialize(Local<Object> target,
                          Local<Value> unused,
                          Local<Context> context) {
@@ -895,7 +902,7 @@ void TLSWrap::Initialize(Local<Object> target,
   env->SetProtoMethod(t, "destroySSL", DestroySSL);
   env->SetProtoMethod(t, "enableCertCb", EnableCertCb);
 
-  StreamBase::AddMethods<TLSWrap>(env, t, StreamBase::kFlagHasWritev);
+  StreamBase::AddMethods<TLSWrap>(env, t);
   SSLWrap<TLSWrap>::AddMethods(env, t);
 
   env->SetProtoMethod(t, "getServername", GetServername);

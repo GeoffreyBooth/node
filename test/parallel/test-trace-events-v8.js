@@ -21,7 +21,7 @@ const proc = cp.spawn(process.execPath,
                         '-e', CODE ]);
 
 proc.once('exit', common.mustCall(() => {
-  assert(common.fileExists(FILE_NAME));
+  assert(fs.existsSync(FILE_NAME));
   fs.readFile(FILE_NAME, common.mustCall((err, data) => {
     const traces = JSON.parse(data.toString()).traceEvents;
     assert(traces.length > 0);
@@ -41,8 +41,6 @@ proc.once('exit', common.mustCall(() => {
       if (trace.pid !== proc.pid)
         return false;
       if (trace.cat !== 'node.async_hooks')
-        return false;
-      if (trace.name !== 'TIMERWRAP')
         return false;
       return true;
     }));

@@ -29,8 +29,6 @@ const os = require('os');
 const { exec, execSync, spawn, spawnSync } = require('child_process');
 const stream = require('stream');
 const util = require('util');
-const Timer = process.binding('timer_wrap').Timer;
-const { hasTracing } = process.binding('config');
 const { fixturesDir } = require('./fixtures');
 const tmpdir = require('./tmpdir');
 
@@ -224,12 +222,6 @@ Object.defineProperty(exports, 'opensslCli', { get: function() {
 Object.defineProperty(exports, 'hasCrypto', {
   get: function() {
     return Boolean(process.versions.openssl);
-  }
-});
-
-Object.defineProperty(exports, 'hasTracing', {
-  get: function() {
-    return Boolean(hasTracing);
   }
 });
 
@@ -477,17 +469,8 @@ exports.hasMultiLocalhost = function hasMultiLocalhost() {
   return ret === 0;
 };
 
-exports.fileExists = function(pathname) {
-  try {
-    fs.accessSync(pathname);
-    return true;
-  } catch (err) {
-    return false;
-  }
-};
-
 exports.skipIfEslintMissing = function() {
-  if (!exports.fileExists(
+  if (!fs.existsSync(
     path.join(__dirname, '..', '..', 'tools', 'node_modules', 'eslint')
   )) {
     exports.skip('missing ESLint');
@@ -600,9 +583,9 @@ exports.nodeProcessAborted = function nodeProcessAborted(exitCode, signal) {
 };
 
 exports.busyLoop = function busyLoop(time) {
-  const startTime = Timer.now();
+  const startTime = Date.now();
   const stopTime = startTime + time;
-  while (Timer.now() < stopTime) {}
+  while (Date.now() < stopTime) {}
 };
 
 exports.isAlive = function isAlive(pid) {
@@ -703,8 +686,8 @@ exports.expectsError = function expectsError(fn, settings, exact) {
       assert.fail(`Expected one argument, got ${util.inspect(arguments)}`);
     }
     const descriptor = Object.getOwnPropertyDescriptor(error, 'message');
-    assert.strictEqual(descriptor.enumerable,
-                       false, 'The error message should be non-enumerable');
+    // The error message should be non-enumerable
+    assert.strictEqual(descriptor.enumerable, false);
 
     let innerSettings = settings;
     if ('type' in settings) {
@@ -815,9 +798,10 @@ exports.getBufferSources = function getBufferSources(buf) {
 };
 
 // Crash the process on unhandled rejections.
-exports.crashOnUnhandledRejection = function() {
-  process.on('unhandledRejection',
-             (err) => process.nextTick(() => { throw err; }));
+const crashOnUnhandledRejection = (err) => { throw err; };
+process.on('unhandledRejection', crashOnUnhandledRejection);
+exports.disableCrashOnUnhandledRejection = function() {
+  process.removeListener('unhandledRejection', crashOnUnhandledRejection);
 };
 
 exports.getTTYfd = function getTTYfd() {
@@ -883,3 +867,30 @@ exports.isCPPSymbolsNotMapped = exports.isWindows ||
                                 exports.isAIX ||
                                 exports.isLinuxPPCBE ||
                                 exports.isFreeBSD;
+
+const gcTrackerMap = new WeakMap();
+const gcTrackerTag = 'NODE_TEST_COMMON_GC_TRACKER';
+
+exports.onGC = function(obj, gcListener) {
+  const async_hooks = require('async_hooks');
+
+  const onGcAsyncHook = async_hooks.createHook({
+    init: exports.mustCallAtLeast(function(id, type, trigger, resource) {
+      if (this.trackedId === undefined) {
+        assert.strictEqual(type, gcTrackerTag);
+        this.trackedId = id;
+      }
+    }),
+    destroy(id) {
+      assert.notStrictEqual(this.trackedId, -1);
+      if (id === this.trackedId) {
+        this.gcListener.ongc();
+        onGcAsyncHook.disable();
+      }
+    }
+  }).enable();
+  onGcAsyncHook.gcListener = gcListener;
+
+  gcTrackerMap.set(obj, new async_hooks.AsyncResource(gcTrackerTag));
+  obj = null;
+};

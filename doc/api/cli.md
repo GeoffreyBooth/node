@@ -81,6 +81,13 @@ added: v9.6.0
 
 Enable experimental ES Module support in the `vm` module.
 
+### `--experimental-worker`
+<!-- YAML
+added: v10.5.0
+-->
+
+Enable experimental worker threads using the `worker_threads` module.
+
 ### `--force-fips`
 <!-- YAML
 added: v6.0.0
@@ -124,6 +131,13 @@ Activate inspector on `host:port`. Default is `127.0.0.1:9229`.
 V8 inspector integration allows tools such as Chrome DevTools and IDEs to debug
 and profile Node.js instances. The tools attach to Node.js instances via a
 tcp port and communicate using the [Chrome DevTools Protocol][].
+
+### `--loader=file`
+<!--
+added: v9.0.0
+-->
+
+Specify the `file` of the custom [experimental ECMAScript Module][] loader.
 
 ### `--napi-modules`
 <!-- YAML
@@ -270,6 +284,13 @@ added: v0.11.14
 -->
 
 Throw errors for deprecations.
+
+### `--title=title`
+<!-- YAML
+added: v10.7.0
+-->
+
+Set `process.title` on startup.
 
 ### `--tls-cipher-list=list`
 <!-- YAML
@@ -513,22 +534,31 @@ that is not allowed in the environment is used, such as `-p` or a script file.
 
 Node options that are allowed are:
 - `--enable-fips`
+- `--experimental-modules`
+- `--experimental-repl-await`
+- `--experimental-vm-modules`
+- `--experimental-worker`
 - `--force-fips`
 - `--icu-data-dir`
+- `--inspect`
 - `--inspect-brk`
 - `--inspect-port`
-- `--inspect`
+- `--loader`
+- `--napi-modules`
 - `--no-deprecation`
+- `--no-force-async-hooks-checks`
 - `--no-warnings`
 - `--openssl-config`
+- `--pending-deprecation`
 - `--redirect-warnings`
 - `--require`, `-r`
 - `--throw-deprecation`
+- `--title`
 - `--tls-cipher-list`
 - `--trace-deprecation`
-- `--trace-events-categories`
-- `--trace-events-enabled`
+- `--trace-event-categories`
 - `--trace-event-file-pattern`
+- `--trace-events-enabled`
 - `--trace-sync-io`
 - `--trace-warnings`
 - `--track-heap-objects`
@@ -663,4 +693,5 @@ greater than `4` (its current default value). For more information, see the
 [REPL]: repl.html
 [debugger]: debugger.html
 [emit_warning]: process.html#process_process_emitwarning_warning_type_code_ctor
+[experimental ECMAScript Module]: esm.html#esm_loader_hooks
 [libuv threadpool documentation]: http://docs.libuv.org/en/latest/threadpool.html

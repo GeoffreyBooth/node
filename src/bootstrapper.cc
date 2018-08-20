@@ -1,8 +1,9 @@
 #include "node.h"
-#include "env.h"
 #include "env-inl.h"
 #include "node_internals.h"
 #include "v8.h"
+
+#include <atomic>
 
 namespace node {
 
@@ -30,6 +31,12 @@ void RunMicrotasks(const FunctionCallbackInfo<Value>& args) {
   args.GetIsolate()->RunMicrotasks();
 }
 
+void SetupTraceCategoryState(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  CHECK(args[0]->IsFunction());
+  env->set_trace_category_state_function(args[0].As<Function>());
+}
+
 void SetupNextTick(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
@@ -52,6 +59,9 @@ void SetupNextTick(const FunctionCallbackInfo<Value>& args) {
 }
 
 void PromiseRejectCallback(PromiseRejectMessage message) {
+  static std::atomic<uint64_t> unhandledRejections{0};
+  static std::atomic<uint64_t> rejectionsHandledAfter{0};
+
   Local<Promise> promise = message.GetPromise();
   Isolate* isolate = promise->GetIsolate();
   PromiseRejectEvent event = message.GetEvent();
@@ -66,12 +76,22 @@ void PromiseRejectCallback(PromiseRejectMessage message) {
 
     if (value.IsEmpty())
       value = Undefined(isolate);
+
+    unhandledRejections++;
   } else if (event == v8::kPromiseHandlerAddedAfterReject) {
     callback = env->promise_reject_handled_function();
     value = Undefined(isolate);
+
+    rejectionsHandledAfter++;
   } else {
-    UNREACHABLE();
+    return;
   }
+
+  TRACE_COUNTER2(TRACING_CATEGORY_NODE2(promises, rejections),
+                 "rejections",
+                 "unhandled", unhandledRejections,
+                 "handledAfter", rejectionsHandledAfter);
+
 
   Local<Value> args[] = { promise, value };
   MaybeLocal<Value> ret = callback->Call(env->context(),
@@ -103,12 +123,14 @@ void SetupPromises(const FunctionCallbackInfo<Value>& args) {
 // completes so that it can be gc'd as soon as possible.
 void SetupBootstrapObject(Environment* env,
                           Local<Object> bootstrapper) {
+  BOOTSTRAP_METHOD(_setupTraceCategoryState, SetupTraceCategoryState);
   BOOTSTRAP_METHOD(_setupProcessObject, SetupProcessObject);
   BOOTSTRAP_METHOD(_setupNextTick, SetupNextTick);
   BOOTSTRAP_METHOD(_setupPromises, SetupPromises);
   BOOTSTRAP_METHOD(_chdir, Chdir);
   BOOTSTRAP_METHOD(_cpuUsage, CPUUsage);
   BOOTSTRAP_METHOD(_hrtime, Hrtime);
+  BOOTSTRAP_METHOD(_hrtimeBigInt, HrtimeBigInt);
   BOOTSTRAP_METHOD(_memoryUsage, MemoryUsage);
   BOOTSTRAP_METHOD(_rawDebug, RawDebug);
   BOOTSTRAP_METHOD(_umask, Umask);

@@ -36,6 +36,7 @@
 
 #include <string>
 #include <functional>  // std::function
+#include <set>
 
 namespace node {
 
@@ -66,6 +67,9 @@ inline char* Malloc(size_t n);
 inline char* Calloc(size_t n);
 inline char* UncheckedMalloc(size_t n);
 inline char* UncheckedCalloc(size_t n);
+
+template <typename T>
+inline T MultiplyWithOverflowCheck(T a, T b);
 
 // Used by the allocation functions when allocation fails.
 // Thin wrapper around v8::Isolate::LowMemoryNotification() that checks
@@ -472,6 +476,8 @@ struct FunctionDeleter {
 
 template <typename T, void (*function)(T*)>
 using DeleteFnPtr = typename FunctionDeleter<T, function>::Pointer;
+
+std::set<std::string> ParseCommaSeparatedSet(const std::string& in);
 
 }  // namespace node
 

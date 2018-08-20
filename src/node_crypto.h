@@ -97,6 +97,8 @@ extern int VerifyCallback(int preverify_ok, X509_STORE_CTX* ctx);
 
 extern void UseExtraCaCerts(const std::string& file);
 
+void InitCryptoOnce();
+
 class SecureContext : public BaseObject {
  public:
   ~SecureContext() override {
@@ -104,6 +106,12 @@ class SecureContext : public BaseObject {
   }
 
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
+
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(SecureContext)
 
   SSLCtxPointer ctx_;
   X509Pointer cert_;
@@ -337,6 +345,12 @@ class CipherBase : public BaseObject {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(CipherBase)
+
  protected:
   enum CipherKind {
     kCipher,
@@ -407,6 +421,12 @@ class Hmac : public BaseObject {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(Hmac)
+
  protected:
   void HmacInit(const char* hash_type, const char* key, int key_len);
   bool HmacUpdate(const char* data, int len);
@@ -429,6 +449,12 @@ class Hmac : public BaseObject {
 class Hash : public BaseObject {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
+
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(Hash)
 
   bool HashInit(const char* hash_type);
   bool HashUpdate(const char* data, int len);
@@ -468,6 +494,12 @@ class SignBase : public BaseObject {
 
   Error Init(const char* sign_type);
   Error Update(const char* data, int len);
+
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(SignBase)
 
  protected:
   void CheckThrow(Error error);
@@ -581,6 +613,12 @@ class DiffieHellman : public BaseObject {
     MakeWeak();
   }
 
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(DiffieHellman)
+
  private:
   static void GetField(const v8::FunctionCallbackInfo<v8::Value>& args,
                        const BIGNUM* (*get_field)(const DH*),
@@ -605,6 +643,12 @@ class ECDH : public BaseObject {
                                       const EC_GROUP* group,
                                       char* data,
                                       size_t len);
+
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(ECDH)
 
  protected:
   ECDH(Environment* env, v8::Local<v8::Object> wrap, ECKeyPointer&& key)

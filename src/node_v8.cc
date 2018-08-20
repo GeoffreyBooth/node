@@ -122,7 +122,8 @@ void Initialize(Local<Object> target,
                 Local<Context> context) {
   Environment* env = Environment::GetCurrent(context);
 
-  env->SetMethod(target, "cachedDataVersionTag", CachedDataVersionTag);
+  env->SetMethodNoSideEffect(target, "cachedDataVersionTag",
+                             CachedDataVersionTag);
 
   env->SetMethod(target,
                  "updateHeapStatisticsArrayBuffer",
@@ -199,4 +200,4 @@ void Initialize(Local<Object> target,
 
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(v8, node::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(v8, node::Initialize)

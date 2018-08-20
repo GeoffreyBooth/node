@@ -108,7 +108,12 @@ have occasion to work with the `Http2Session` object directly, with most
 actions typically taken through interactions with either the `Http2Server` or
 `Http2Stream` objects.
 
-#### `Http2Session` and Sockets
+User code will not create `Http2Session` instances directly. Server-side
+`Http2Session` instances are created by the `Http2Server` instance when a
+new HTTP/2 connection is received. Client-side `Http2Session` instances are
+created using the `http2.connect()` method.
+
+#### Http2Session and Sockets
 
 Every `Http2Session` instance is associated with exactly one [`net.Socket`][] or
 [`tls.TLSSocket`][] when it is created. When either the `Socket` or the
@@ -271,11 +276,16 @@ server.on('stream', (stream, headers) => {
     'content-type': 'text/html',
     ':status': 200
   });
+  stream.on('error', (error) => console.error(error));
   stream.end('<h1>Hello World</h1>');
 });
 
 server.listen(80);
 ```
+
+Even though HTTP/2 streams and network sockets are not in a 1:1 correspondence,
+a network error will destroy each individual stream and must be handled on the
+stream level, as shown above.
 
 #### Event: 'timeout'
 <!-- YAML
@@ -339,7 +349,7 @@ Will be `true` if this `Http2Session` instance is still connecting, will be set
 to `false` before emitting `connect` event and/or calling the `http2.connect`
 callback.
 
-#### http2session.destroy([error,][code])
+#### http2session.destroy([error][, code])
 <!-- YAML
 added: v8.4.0
 -->
@@ -382,7 +392,7 @@ connected, `true` if the `Http2Session` is connected with a `TLSSocket`,
 and `false` if the `Http2Session` is connected to any other kind of socket
 or stream.
 
-#### http2session.goaway([code, [lastStreamID, [opaqueData]]])
+#### http2session.goaway([code[, lastStreamID[, opaqueData]]])
 <!-- YAML
 added: v9.4.0
 -->
@@ -1246,6 +1256,9 @@ Setting the weight of a push stream is not allowed in the `HEADERS` frame. Pass
 a `weight` value to `http2stream.priority` with the `silent` option set to
 `true` to enable server-side bandwidth balancing between concurrent streams.
 
+Calling `http2stream.pushStream()` from within a pushed stream is not permitted
+and will throw an error.
+
 #### http2stream.respond([headers[, options]])
 <!-- YAML
 added: v8.4.0
@@ -1505,9 +1518,9 @@ added: v8.4.0
 
 * Extends: {net.Server}
 
-In `Http2Server`, there are no `'clientError'` events as there are in
-HTTP1. However, there are `'sessionError'`, and `'streamError'` events for
-errors emitted on the socket, or from `Http2Session` or `Http2Stream` instances.
+Instances of `Http2Server` are created using the `http2.createServer()`
+function. The `Http2Server` class is not exported directly by the `http2`
+module.
 
 #### Event: 'checkContinue'
 <!-- YAML
@@ -1558,14 +1571,6 @@ added: v8.4.0
 The `'sessionError'` event is emitted when an `'error'` event is emitted by
 an `Http2Session` object associated with the `Http2Server`.
 
-#### Event: 'streamError'
-<!-- YAML
-added: v8.5.0
--->
-
-If a `ServerHttp2Stream` emits an `'error'` event, it will be forwarded here.
-The stream will already be destroyed when this event is triggered.
-
 #### Event: 'stream'
 <!-- YAML
 added: v8.4.0
@@ -1609,7 +1614,7 @@ a given number of milliseconds set using `http2server.setTimeout()`.
 <!-- YAML
 added: v8.4.0
 -->
-- `callback` {Function}
+* `callback` {Function}
 
 Stops the server from accepting new connections.  See [`net.Server.close()`][].
 
@@ -1623,6 +1628,10 @@ added: v8.4.0
 -->
 
 * Extends: {tls.Server}
+
+Instances of `Http2SecureServer` are created using the
+`http2.createSecureServer()` function. The `Http2SecureServer` class is not
+exported directly by the `http2` module.
 
 #### Event: 'checkContinue'
 <!-- YAML
@@ -1728,7 +1737,7 @@ the connection is terminated. See the [Compatibility API][].
 <!-- YAML
 added: v8.4.0
 -->
-- `callback` {Function}
+* `callback` {Function}
 
 Stops the server from accepting new connections.  See [`tls.Server.close()`][].
 
@@ -1921,6 +1930,7 @@ instances.
 
 ```js
 const http2 = require('http2');
+const fs = require('fs');
 
 const options = {
   key: fs.readFileSync('server-key.pem'),
@@ -2117,6 +2127,22 @@ Header objects passed to callback functions will have a `null` prototype. This
 means that normal JavaScript object methods such as
 `Object.prototype.toString()` and `Object.prototype.hasOwnProperty()` will
 not work.
+
+For incoming headers:
+* The `:status` header is converted to `number`.
+* Duplicates of `:status`, `:method`, `:authority`, `:scheme`, `:path`,
+`age`, `authorization`, `access-control-allow-credentials`,
+`access-control-max-age`, `access-control-request-method`, `content-encoding`,
+`content-language`, `content-length`, `content-location`, `content-md5`,
+`content-range`, `content-type`, `date`, `dnt`, `etag`, `expires`, `from`,
+`if-match`, `if-modified-since`, `if-none-match`, `if-range`,
+`if-unmodified-since`, `last-modified`, `location`, `max-forwards`,
+`proxy-authorization`, `range`, `referer`,`retry-after`, `tk`,
+`upgrade-insecure-requests`, `user-agent` or `x-content-type-options` are
+discarded.
+* `set-cookie` is always an array. Duplicates are added to the array.
+* `cookie`: the values are joined together with '; '.
+* For all other headers, the values are joined together with ', '.
 
 ```js
 const http2 = require('http2');
@@ -2685,8 +2711,8 @@ added: v8.4.0
 This object is created internally by an HTTP server — not by the user. It is
 passed as the second parameter to the [`'request'`][] event.
 
-The response implements, but does not inherit from, the [Writable Stream][]
-interface. This is an [`EventEmitter`][] with the following events:
+The response inherits from [Stream][], and additionally implements the
+following:
 
 #### Event: 'close'
 <!-- YAML
@@ -3123,11 +3149,13 @@ will result in a [`TypeError`][] being thrown.
 <!-- YAML
 added: v8.4.0
 -->
+* `headers` {HTTP/2 Headers Object} An object describing the headers
+* `callback` {Function}
 
 Call [`http2stream.pushStream()`][] with the given headers, and wraps the
 given newly created [`Http2Stream`] on `Http2ServerResponse`.
 
-The callback will be called with an error with code `ERR_HTTP2_STREAM_CLOSED`
+The callback will be called with an error with code `ERR_HTTP2_INVALID_STREAM`
 if the stream is closed.
 
 ## Collecting HTTP/2 Performance Metrics
@@ -3203,13 +3231,11 @@ following additional properties:
 [Readable Stream]: stream.html#stream_class_stream_readable
 [RFC 7838]: https://tools.ietf.org/html/rfc7838
 [Using `options.selectPadding()`]: #http2_using_options_selectpadding
-[Writable Stream]: stream.html#stream_writable_streams
 [`'checkContinue'`]: #http2_event_checkcontinue
 [`'request'`]: #http2_event_request
 [`'unknownProtocol'`]: #http2_event_unknownprotocol
 [`ClientHttp2Stream`]: #http2_class_clienthttp2stream
 [`Duplex`]: stream.html#stream_class_stream_duplex
-[`EventEmitter`]: events.html#events_class_eventemitter
 [`Http2ServerRequest`]: #http2_class_http2_http2serverrequest
 [`Http2Session` and Sockets]: #http2_http2session_and_sockets
 [`Http2Stream`]: #http2_class_http2stream

@@ -4,7 +4,7 @@ Depending on what platform or features you require, the build process may
 differ slightly. After you've successfully built a binary, running the
 test suite to validate that the binary works as intended is a good next step.
 
-If you consistently can reproduce a test failure, search for it in the
+If you can reproduce a test failure consistently, search for it in the
 [Node.js issue tracker](https://github.com/nodejs/node/issues) or
 file a new issue.
 
@@ -34,25 +34,24 @@ Support is divided into three tiers:
 ### Supported platforms
 
 The community does not build or test against end-of-life distributions (EoL).
-Thus we do not recommend that you use Node on end-of-life or unsupported
+Thus, we do not recommend that you use Node on end-of-life or unsupported
 platforms in production.
 
 |  System      | Support type | Version                          | Architectures        | Notes            |
 |--------------|--------------|----------------------------------|----------------------|------------------|
 | GNU/Linux    | Tier 1       | kernel >= 2.6.32, glibc >= 2.12  | x64, arm             |                  |
 | GNU/Linux    | Tier 1       | kernel >= 3.10, glibc >= 2.17    | arm64                |                  |
-| macOS        | Tier 1       | >= 10.10                         | x64                  |                  |
-| Windows      | Tier 1       | >= Windows 7/2008 R2/2012 R2     | x86, x64             | vs2017           |
-| SmartOS      | Tier 2       | >= 15 < 16.4                     | x86, x64             | see note1        |
+| macOS/OS X   | Tier 1       | >= 10.11                         | x64                  |                  |
+| Windows      | Tier 1       | >= Windows 7/2008 R2/2012 R2     | x86, x64             | [2](#fn2),[3](#fn3),[4](#fn4) |
+| SmartOS      | Tier 2       | >= 15 < 16.4                     | x86, x64             | [1](#fn1) |
 | FreeBSD      | Tier 2       | >= 10                            | x64                  |                  |
 | GNU/Linux    | Tier 2       | kernel >= 3.13.0, glibc >= 2.19  | ppc64le >=power8     |                  |
 | AIX          | Tier 2       | >= 7.1 TL04                      | ppc64be >=power7     |                  |
 | GNU/Linux    | Tier 2       | kernel >= 3.10, glibc >= 2.17    | s390x                |                  |
-| macOS        | Experimental | >= 10.8 < 10.10                  | x64                  | no test coverage |
 | GNU/Linux    | Experimental | kernel >= 2.6.32, glibc >= 2.12  | x86                  | limited CI       |
 | Linux (musl) | Experimental | musl >= 1.0                      | x64                  |                  |
 
-note1 - The gcc4.8-libs package needs to be installed, because node
+<em id="fn1">1</em>: The gcc4.8-libs package needs to be installed, because node
   binaries have been built with GCC 4.8, for which runtime libraries are not
   installed by default. For these node versions, the recommended binaries
   are the ones available in pkgsrc, not the one available from nodejs.org.
@@ -61,19 +60,22 @@ note1 - The gcc4.8-libs package needs to be installed, because node
   by Joyent. SmartOS images >= 16.4 are not supported because
   GCC 4.8 runtime libraries are not available in their pkgsrc repository
 
-*Note*: On Windows, running Node.js in windows terminal emulators like `mintty`
-  requires the usage of [winpty](https://github.com/rprichard/winpty) for
-  Node's tty channels to work correctly (e.g. `winpty node.exe script.js`).
+<em id="fn2">2</em>: Tier 1 support for building on Windows is only on 64 bit
+  hosts. Support is experimental for 32 bit hosts.
+
+<em id="fn3">3</em>: On Windows, running Node.js in Windows terminal emulators
+  like `mintty` requires the usage of [winpty](https://github.com/rprichard/winpty)
+  for the tty channels to work correctly (e.g. `winpty node.exe script.js`).
   In "Git bash" if you call the node shell alias (`node` without the `.exe`
   extension), `winpty` is used automatically.
 
-The Windows Subsystem for Linux (WSL) is not directly supported, but the
-GNU/Linux build process and binaries should work. The community will only
-address issues that reproduce on native GNU/Linux systems. Issues that only
-reproduce on WSL should be reported in the
-[WSL issue tracker](https://github.com/Microsoft/WSL/issues). Running the
-Windows binary (`node.exe`) in WSL is not recommended, and will not work
-without adjustment (such as stdio redirection).
+<em id="fn4">4</em>: The Windows Subsystem for Linux (WSL) is not directly
+  supported, but the GNU/Linux build process and binaries should work. The
+  community will only address issues that reproduce on native GNU/Linux
+  systems. Issues that only reproduce on WSL should be reported in the
+  [WSL issue tracker](https://github.com/Microsoft/WSL/issues). Running the
+  Windows binary (`node.exe`) in WSL is not recommended, and will not work
+  without adjustment (such as stdio redirection).
 
 ### Supported toolchains
 
@@ -89,7 +91,7 @@ Depending on host platform, the selection of toolchains may vary.
 
 #### Windows
 
-* Visual Studio 2017 or the Build Tools thereof
+* Visual Studio 2017 with the Windows 10 SDK on a 64 bit host.
 
 #### OpenSSL asm support
 
@@ -311,7 +313,7 @@ $ make
 
 ### `Intl` (ECMA-402) support:
 
-[Intl](https://github.com/nodejs/node/wiki/Intl) support is
+[Intl](https://github.com/nodejs/node/blob/master/doc/api/intl.md) support is
 enabled by default, with English data only.
 
 #### Default: `small-icu` (English only) support
@@ -320,9 +322,6 @@ By default, only English data is included, but
 the full `Intl` (ECMA-402) APIs.  It does not need to download
 any dependencies to function. You can add full
 data at runtime.
-
-*Note:* more docs are on
-[the node wiki](https://github.com/nodejs/node/wiki/Intl).
 
 #### Build with full ICU support (all locales supported by ICU):
 
@@ -411,7 +410,7 @@ This version of Node.js does not support FIPS.
 It is possible to specify one or more JavaScript text files to be bundled in
 the binary as builtin modules when building Node.js.
 
-### Unix / macOS
+### Unix/macOS
 
 This command will make `/root/myModule.js` available via
 `require('/root/myModule')` and `./myModule2.js` available via

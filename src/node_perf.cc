@@ -1,8 +1,6 @@
 #include "node_internals.h"
 #include "node_perf.h"
 
-#include <vector>
-
 #ifdef __POSIX__
 #include <sys/time.h>  // gettimeofday
 #endif
@@ -77,14 +75,18 @@ inline void InitObject(const PerformanceEntry& entry, Local<Object> obj) {
                          env->name_string(),
                          String::NewFromUtf8(isolate,
                                              entry.name().c_str(),
-                                             String::kNormalString),
-                         attr).FromJust();
+                                             v8::NewStringType::kNormal)
+                             .ToLocalChecked(),
+                         attr)
+      .FromJust();
   obj->DefineOwnProperty(context,
                          FIXED_ONE_BYTE_STRING(isolate, "entryType"),
                          String::NewFromUtf8(isolate,
                                              entry.type().c_str(),
-                                             String::kNormalString),
-                         attr).FromJust();
+                                             v8::NewStringType::kNormal)
+                             .ToLocalChecked(),
+                         attr)
+      .FromJust();
   obj->DefineOwnProperty(context,
                          FIXED_ONE_BYTE_STRING(isolate, "startTime"),
                          Number::New(isolate, entry.startTime()),
@@ -270,6 +272,9 @@ void MarkGarbageCollectionEnd(Isolate* isolate,
                               v8::GCCallbackFlags flags,
                               void* data) {
   Environment* env = static_cast<Environment*>(data);
+  // If no one is listening to gc performance entries, do not create them.
+  if (!env->performance_state()->observers[NODE_PERFORMANCE_ENTRY_TYPE_GC])
+    return;
   GCPerformanceEntry* entry =
       new GCPerformanceEntry(env,
                              static_cast<PerformanceGCKind>(type),
@@ -309,10 +314,7 @@ void TimerFunctionCall(const FunctionCallbackInfo<Value>& args) {
   Local<Function> fn = args.Data().As<Function>();
   size_t count = args.Length();
   size_t idx;
-  std::vector<Local<Value>> call_args;
-  for (size_t i = 0; i < count; ++i)
-    call_args.push_back(args[i]);
-
+  SlicedArguments call_args(args);
   Utf8Value name(isolate, GetName(fn));
 
   uint64_t start;
@@ -455,4 +457,4 @@ void Initialize(Local<Object> target,
 }  // namespace performance
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(performance, node::performance::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(performance, node::performance::Initialize)

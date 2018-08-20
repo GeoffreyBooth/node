@@ -40,6 +40,7 @@
 #include <stdlib.h>
 
 #include <string>
+#include <vector>
 
 // Custom constants used by both node_constants.cc and node_zlib.cc
 #define Z_MIN_WINDOWBITS 8
@@ -71,9 +72,11 @@ struct sockaddr;
   do {                                                                        \
     v8::Isolate* isolate = target->GetIsolate();                              \
     v8::Local<v8::String> constant_name =                                     \
-        v8::String::NewFromUtf8(isolate, name);                               \
+        v8::String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal)    \
+            .ToLocalChecked();                                                \
     v8::Local<v8::String> constant_value =                                    \
-        v8::String::NewFromUtf8(isolate, constant);                           \
+        v8::String::NewFromUtf8(isolate, constant, v8::NewStringType::kNormal)\
+            .ToLocalChecked();                                                \
     v8::PropertyAttribute constant_attributes =                               \
         static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete);    \
     target->DefineOwnProperty(isolate->GetCurrentContext(),                   \
@@ -110,6 +113,7 @@ struct sockaddr;
     V(domain)                                                                 \
     V(fs)                                                                     \
     V(fs_event_wrap)                                                          \
+    V(heap_utils)                                                             \
     V(http2)                                                                  \
     V(http_parser)                                                            \
     V(inspector)                                                              \
@@ -128,7 +132,7 @@ struct sockaddr;
     V(string_decoder)                                                         \
     V(symbols)                                                                \
     V(tcp_wrap)                                                               \
-    V(timer_wrap)                                                             \
+    V(timers)                                                             \
     V(trace_events)                                                           \
     V(tty_wrap)                                                               \
     V(types)                                                                  \
@@ -191,9 +195,9 @@ extern bool config_experimental_modules;
 // that is used by lib/vm.js
 extern bool config_experimental_vm_modules;
 
-// Set in node.cc by ParseArgs when --experimental-vm-modules is used.
+// Set in node.cc by ParseArgs when --experimental-worker is used.
 // Used in node_config.cc to set a constant on process.binding('config')
-// that is used by lib/vm.js
+// that is used by the module loader.
 extern bool config_experimental_worker;
 
 // Set in node.cc by ParseArgs when --experimental-repl-await is used.
@@ -314,6 +318,39 @@ class FatalTryCatch : public v8::TryCatch {
  private:
   Environment* env_;
 };
+
+class SlicedArguments {
+ public:
+  inline explicit SlicedArguments(
+      const v8::FunctionCallbackInfo<v8::Value>& args,
+      size_t start = 0);
+  inline size_t size() const { return size_; }
+  inline v8::Local<v8::Value>* data() { return data_; }
+
+ private:
+  size_t size_;
+  v8::Local<v8::Value>* data_;
+  v8::Local<v8::Value> fixed_[64];
+  std::vector<v8::Local<v8::Value>> dynamic_;
+};
+
+SlicedArguments::SlicedArguments(
+    const v8::FunctionCallbackInfo<v8::Value>& args,
+    size_t start) : size_(0), data_(fixed_) {
+  const size_t length = static_cast<size_t>(args.Length());
+  if (start >= length) return;
+  const size_t size = length - start;
+
+  if (size > arraysize(fixed_)) {
+    dynamic_.resize(size);
+    data_ = dynamic_.data();
+  }
+
+  for (size_t i = 0; i < size; ++i)
+    data_[i] = args[i + start];
+
+  size_ = size;
+}
 
 void ReportException(Environment* env,
                      v8::Local<v8::Value> er,
@@ -506,9 +543,6 @@ class InternalCallbackScope {
 
   inline bool Failed() const { return failed_; }
   inline void MarkAsFailed() { failed_ = true; }
-  inline bool IsInnerMakeCallback() const {
-    return callback_scope_.in_makecallback();
-  }
 
  private:
   Environment* env_;
@@ -897,12 +931,22 @@ static inline const char* errno_string(int errorno) {
 
 // Functions defined in node.cc that are exposed via the bootstrapper object
 
+extern double prog_start_time;
+void PrintErrorString(const char* format, ...);
+
+void Abort(const v8::FunctionCallbackInfo<v8::Value>& args);
 void Chdir(const v8::FunctionCallbackInfo<v8::Value>& args);
 void CPUUsage(const v8::FunctionCallbackInfo<v8::Value>& args);
+void Cwd(const v8::FunctionCallbackInfo<v8::Value>& args);
 void Hrtime(const v8::FunctionCallbackInfo<v8::Value>& args);
+void HrtimeBigInt(const v8::FunctionCallbackInfo<v8::Value>& args);
+void Kill(const v8::FunctionCallbackInfo<v8::Value>& args);
 void MemoryUsage(const v8::FunctionCallbackInfo<v8::Value>& args);
 void RawDebug(const v8::FunctionCallbackInfo<v8::Value>& args);
+void StartProfilerIdleNotifier(const v8::FunctionCallbackInfo<v8::Value>& args);
+void StopProfilerIdleNotifier(const v8::FunctionCallbackInfo<v8::Value>& args);
 void Umask(const v8::FunctionCallbackInfo<v8::Value>& args);
+void Uptime(const v8::FunctionCallbackInfo<v8::Value>& args);
 
 #if defined(__POSIX__) && !defined(__ANDROID__) && !defined(__CloudABI__)
 void SetGid(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -911,6 +955,11 @@ void SetUid(const v8::FunctionCallbackInfo<v8::Value>& args);
 void SetEUid(const v8::FunctionCallbackInfo<v8::Value>& args);
 void SetGroups(const v8::FunctionCallbackInfo<v8::Value>& args);
 void InitGroups(const v8::FunctionCallbackInfo<v8::Value>& args);
+void GetUid(const v8::FunctionCallbackInfo<v8::Value>& args);
+void GetGid(const v8::FunctionCallbackInfo<v8::Value>& args);
+void GetEUid(const v8::FunctionCallbackInfo<v8::Value>& args);
+void GetEGid(const v8::FunctionCallbackInfo<v8::Value>& args);
+void GetGroups(const v8::FunctionCallbackInfo<v8::Value>& args);
 #endif  // __POSIX__ && !defined(__ANDROID__) && !defined(__CloudABI__)
 
 }  // namespace node

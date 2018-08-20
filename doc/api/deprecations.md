@@ -64,10 +64,9 @@ The `_writableState.buffer` property is deprecated. Use the
 <a id="DEP0004"></a>
 ### DEP0004: CryptoStream.prototype.readyState
 
-Type: Documentation-only
+Type: End-of-Life
 
-The `CryptoStream.prototype.readyState` property is deprecated and should not
-be used.
+The `CryptoStream.prototype.readyState` property was removed.
 
 <a id="DEP0005"></a>
 ### DEP0005: Buffer() constructor
@@ -142,17 +141,17 @@ undefined `digest` will throw a `TypeError`.
 <a id="DEP0010"></a>
 ### DEP0010: crypto.createCredentials
 
-Type: Runtime
+Type: End-of-Life
 
-The [`crypto.createCredentials()`][] API is deprecated. Please use
+The `crypto.createCredentials()` API was removed. Please use
 [`tls.createSecureContext()`][] instead.
 
 <a id="DEP0011"></a>
 ### DEP0011: crypto.Credentials
 
-Type: Runtime
+Type: End-of-Life
 
-The `crypto.Credentials` class is deprecated. Please use [`tls.SecureContext`][]
+The `crypto.Credentials` class was removed. Please use [`tls.SecureContext`][]
 instead.
 
 <a id="DEP0012"></a>
@@ -351,20 +350,6 @@ Type: Documentation-only
 
 The [`fs.lchmodSync(path, mode)`][] API is deprecated.
 
-<a id="DEP0037"></a>
-### DEP0037: fs.lchown(path, uid, gid, callback)
-
-Type: Documentation-only
-
-The [`fs.lchown(path, uid, gid, callback)`][] API is deprecated.
-
-<a id="DEP0038"></a>
-### DEP0038: fs.lchownSync(path, uid, gid)
-
-Type: Documentation-only
-
-The [`fs.lchownSync(path, uid, gid)`][] API is deprecated.
-
 <a id="DEP0039"></a>
 ### DEP0039: require.extensions
 
@@ -391,9 +376,9 @@ The `NODE_REPL_HISTORY_FILE` environment variable was removed. Please use
 <a id="DEP0042"></a>
 ### DEP0042: tls.CryptoStream
 
-Type: Documentation-only
+Type: End-of-Life
 
-The [`tls.CryptoStream`][] class is deprecated. Please use
+The [`tls.CryptoStream`][] class was removed. Please use
 [`tls.TLSSocket`][] instead.
 
 <a id="DEP0043"></a>
@@ -943,6 +928,9 @@ Type: Documentation-only (supports [`--pending-deprecation`][])
 Using `process.binding()` in general should be avoided. The type checking
 methods in particular can be replaced by using [`util.types`][].
 
+This deprecation has been superseded by the deprecation of the
+`process.binding()` API ([DEP0111](#DEP0111)).
+
 <a id="DEP0104"></a>
 ### DEP0104: process.env string coercion
 
@@ -966,14 +954,14 @@ Type: End-of-Life
 <a id="DEP0106"></a>
 ### DEP0106: crypto.createCipher and crypto.createDecipher
 
-Type: Documentation-only
+Type: Runtime
 
 Using [`crypto.createCipher()`][] and [`crypto.createDecipher()`][] should be
 avoided as they use a weak key derivation function (MD5 with no salt) and static
 initialization vectors. It is recommended to derive a key using
-[`crypto.pbkdf2()`][] and to use [`crypto.createCipheriv()`][] and
-[`crypto.createDecipheriv()`][] to obtain the [`Cipher`][] and [`Decipher`][]
-objects respectively.
+[`crypto.pbkdf2()`][] or [`crypto.scrypt()`][] and to use
+[`crypto.createCipheriv()`][] and [`crypto.createDecipheriv()`][] to obtain the
+[`Cipher`][] and [`Decipher`][] objects respectively.
 
 <a id="DEP0107"></a>
 ### DEP0107: tls.convertNPNProtocols()
@@ -1005,6 +993,44 @@ accepted by the legacy `url.parse()` API. The mentioned APIs now use the WHATWG
 URL parser that requires strictly valid URLs. Passing an invalid URL is
 deprecated and support will be removed in the future.
 
+<a id="DEP0110"></a>
+### DEP0110: vm.Script cached data
+
+Type: Documentation-only
+
+The option `produceCachedData` has been deprecated. Use
+[`script.createCachedData()`][] instead.
+
+<a id="DEP0111"></a>
+### DEP0111: process.binding()
+
+Type: Documentation-only
+
+The `process.binding()` API is intended for use by Node.js internal code
+only. Use of `process.binding()` by userland code is unsupported.
+
+<a id="DEP0112"></a>
+### DEP0112: dgram private APIs
+
+Type: Runtime
+
+The `dgram` module previously contained several APIs that were never meant to
+accessed outside of Node.js core: `Socket.prototype._handle`,
+`Socket.prototype._receiving`, `Socket.prototype._bindState`,
+`Socket.prototype._queue`, `Socket.prototype._reuseAddr`,
+`Socket.prototype._healthCheck()`, `Socket.prototype._stopReceiving()`, and
+`dgram._createSocketHandle()`.
+
+<a id="DEP0113"></a>
+### DEP0113: Cipher.setAuthTag(), Decipher.getAuthTag()
+
+Type: Runtime
+
+With the current crypto API, having `Cipher.setAuthTag()` and
+`Decipher.getAuthTag()` is not helpful and both functions will throw an error
+when called. They have never been documented and will be removed in a future
+release.
+
 [`--pending-deprecation`]: cli.html#cli_pending_deprecation
 [`Buffer.allocUnsafeSlow(size)`]: buffer.html#buffer_class_method_buffer_allocunsafeslow_size
 [`Buffer.from(array)`]: buffer.html#buffer_class_method_buffer_from_array
@@ -1026,12 +1052,12 @@ deprecated and support will be removed in the future.
 [`console.log()`]: console.html#console_console_log_data_args
 [`crypto.createCipher()`]: crypto.html#crypto_crypto_createcipher_algorithm_password_options
 [`crypto.createCipheriv()`]: crypto.html#crypto_crypto_createcipheriv_algorithm_key_iv_options
-[`crypto.createCredentials()`]: crypto.html#crypto_crypto_createcredentials_details
 [`crypto.createDecipher()`]: crypto.html#crypto_crypto_createdecipher_algorithm_password_options
 [`crypto.createDecipheriv()`]: crypto.html#crypto_crypto_createdecipheriv_algorithm_key_iv_options
 [`crypto.DEFAULT_ENCODING`]: crypto.html#crypto_crypto_default_encoding
 [`crypto.fips`]: crypto.html#crypto_crypto_fips
 [`crypto.pbkdf2()`]: crypto.html#crypto_crypto_pbkdf2_password_salt_iterations_keylen_digest_callback
+[`crypto.scrypt()`]: crypto.html#crypto_crypto_scrypt_password_salt_keylen_options_callback
 [`decipher.final()`]: crypto.html#crypto_decipher_final_outputencoding
 [`decipher.setAuthTag()`]: crypto.html#crypto_decipher_setauthtag_buffer
 [`domain`]: domain.html
@@ -1041,11 +1067,9 @@ deprecated and support will be removed in the future.
 [`fs.exists(path, callback)`]: fs.html#fs_fs_exists_path_callback
 [`fs.lchmod(path, mode, callback)`]: fs.html#fs_fs_lchmod_path_mode_callback
 [`fs.lchmodSync(path, mode)`]: fs.html#fs_fs_lchmodsync_path_mode
-[`fs.lchown(path, uid, gid, callback)`]: fs.html#fs_fs_lchown_path_uid_gid_callback
-[`fs.lchownSync(path, uid, gid)`]: fs.html#fs_fs_lchownsync_path_uid_gid
 [`fs.read()`]: fs.html#fs_fs_read_fd_buffer_offset_length_position_callback
 [`fs.readSync()`]: fs.html#fs_fs_readsync_fd_buffer_offset_length_position
-[`fs.stat()`]: fs.html#fs_fs_stat_path_callback
+[`fs.stat()`]: fs.html#fs_fs_stat_path_options_callback
 [`http.get()`]: http.html#http_http_get_options_callback
 [`http.request()`]: http.html#http_http_request_options_callback
 [`https.get()`]: https.html#https_https_get_options_callback
@@ -1055,6 +1079,7 @@ deprecated and support will be removed in the future.
 [`process.env`]: process.html#process_process_env
 [`punycode`]: punycode.html
 [`require.extensions`]: modules.html#modules_require_extensions
+[`script.createCachedData()`]: vm.html#vm_script_createcacheddata
 [`setInterval()`]: timers.html#timers_setinterval_callback_delay_args
 [`setTimeout()`]: timers.html#timers_settimeout_callback_delay_args
 [`tls.CryptoStream`]: tls.html#tls_class_cryptostream
@@ -1094,5 +1119,5 @@ deprecated and support will be removed in the future.
 [alloc_unsafe_size]: buffer.html#buffer_class_method_buffer_allocunsafe_size
 [from_arraybuffer]: buffer.html#buffer_class_method_buffer_from_arraybuffer_byteoffset_length
 [from_string_encoding]: buffer.html#buffer_class_method_buffer_from_string_encoding
-[NIST SP 800-38D]: http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
+[NIST SP 800-38D]: https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
 [`REPLServer.clearBufferedCommand()`]: repl.html#repl_replserver_clearbufferedcommand

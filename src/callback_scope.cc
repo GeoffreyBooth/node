@@ -1,7 +1,5 @@
 #include "node.h"
-#include "async_wrap.h"
 #include "async_wrap-inl.h"
-#include "env.h"
 #include "env-inl.h"
 #include "v8.h"
 
@@ -61,10 +59,6 @@ InternalCallbackScope::InternalCallbackScope(Environment* env,
     AsyncWrap::EmitBefore(env, asyncContext.async_id);
   }
 
-  if (!IsInnerMakeCallback()) {
-    env->tick_info()->set_has_thrown(false);
-  }
-
   env->async_hooks()->push_async_ids(async_context_.async_id,
                                async_context_.trigger_async_id);
   pushed_ids_ = true;
@@ -93,7 +87,7 @@ void InternalCallbackScope::Close() {
     AsyncWrap::EmitAfter(env_, async_context_.async_id);
   }
 
-  if (IsInnerMakeCallback()) {
+  if (env_->makecallback_depth() > 1) {
     return;
   }
 
@@ -120,7 +114,6 @@ void InternalCallbackScope::Close() {
   if (!env_->can_call_into_js()) return;
 
   if (env_->tick_callback_function()->Call(process, 0, nullptr).IsEmpty()) {
-    env_->tick_info()->set_has_thrown(true);
     failed_ = true;
   }
 }

@@ -265,7 +265,11 @@ size_t StringBytes::WriteUCS2(char* buf,
                               size_t* chars_written) {
   uint16_t* const dst = reinterpret_cast<uint16_t*>(buf);
 
-  size_t max_chars = (buflen / sizeof(*dst));
+  size_t max_chars = buflen / sizeof(*dst);
+  if (max_chars == 0) {
+    return 0;
+  }
+
   size_t nchars;
   size_t alignment = reinterpret_cast<uintptr_t>(dst) % sizeof(*dst);
   if (alignment == 0) {
@@ -343,7 +347,7 @@ size_t StringBytes::Write(Isolate* isolate,
 
       // Node's "ucs2" encoding wants LE character data stored in
       // the Buffer, so we need to reorder on BE platforms.  See
-      // http://nodejs.org/api/buffer.html regarding Node's "ucs2"
+      // https://nodejs.org/api/buffer.html regarding Node's "ucs2"
       // encoding specification
       if (IsBigEndian())
         SwapBytes16(buf, nbytes);
@@ -709,7 +713,7 @@ MaybeLocal<Value> StringBytes::Encode(Isolate* isolate,
 
   // Node's "ucs2" encoding expects LE character data inside a
   // Buffer, so we need to reorder on BE platforms.  See
-  // http://nodejs.org/api/buffer.html regarding Node's "ucs2"
+  // https://nodejs.org/api/buffer.html regarding Node's "ucs2"
   // encoding specification
   if (IsBigEndian()) {
     uint16_t* dst = node::UncheckedMalloc<uint16_t>(buflen);

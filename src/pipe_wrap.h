@@ -45,7 +45,11 @@ class PipeWrap : public ConnectionWrap<PipeWrap, uv_pipe_t> {
                          v8::Local<v8::Value> unused,
                          v8::Local<v8::Context> context);
 
-  size_t self_size() const override { return sizeof(*this); }
+  void MemoryInfo(MemoryTracker* tracker) const override {
+    tracker->TrackThis(this);
+  }
+
+  ADD_MEMORY_INFO_NAME(PipeWrap)
 
  private:
   PipeWrap(Environment* env,

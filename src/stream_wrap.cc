@@ -97,8 +97,7 @@ LibuvStreamWrap::LibuvStreamWrap(Environment* env,
 
 
 void LibuvStreamWrap::AddMethods(Environment* env,
-                                 v8::Local<v8::FunctionTemplate> target,
-                                 int flags) {
+                                 v8::Local<v8::FunctionTemplate> target) {
   Local<FunctionTemplate> get_write_queue_size =
       FunctionTemplate::New(env->isolate(),
                             GetWriteQueueSize,
@@ -110,7 +109,7 @@ void LibuvStreamWrap::AddMethods(Environment* env,
       Local<FunctionTemplate>(),
       static_cast<PropertyAttribute>(ReadOnly | DontDelete));
   env->SetProtoMethod(target, "setBlocking", SetBlocking);
-  StreamBase::AddMethods<LibuvStreamWrap>(env, target, flags);
+  StreamBase::AddMethods<LibuvStreamWrap>(env, target);
 }
 
 
@@ -277,10 +276,7 @@ WriteWrap* LibuvStreamWrap::CreateWriteWrap(Local<Object> object) {
 
 int LibuvStreamWrap::DoShutdown(ShutdownWrap* req_wrap_) {
   LibuvShutdownWrap* req_wrap = static_cast<LibuvShutdownWrap*>(req_wrap_);
-  int err;
-  err = uv_shutdown(req_wrap->req(), stream(), AfterUvShutdown);
-  req_wrap->Dispatched();
-  return err;
+  return req_wrap->Dispatch(uv_shutdown, stream(), AfterUvShutdown);
 }
 
 
@@ -341,9 +337,14 @@ int LibuvStreamWrap::DoWrite(WriteWrap* req_wrap,
   LibuvWriteWrap* w = static_cast<LibuvWriteWrap*>(req_wrap);
   int r;
   if (send_handle == nullptr) {
-    r = uv_write(w->req(), stream(), bufs, count, AfterUvWrite);
+    r = w->Dispatch(uv_write, stream(), bufs, count, AfterUvWrite);
   } else {
-    r = uv_write2(w->req(), stream(), bufs, count, send_handle, AfterUvWrite);
+    r = w->Dispatch(uv_write2,
+                    stream(),
+                    bufs,
+                    count,
+                    send_handle,
+                    AfterUvWrite);
   }
 
   if (!r) {
@@ -356,8 +357,6 @@ int LibuvStreamWrap::DoWrite(WriteWrap* req_wrap,
       NODE_COUNT_PIPE_BYTES_SENT(bytes);
     }
   }
-
-  w->Dispatched();
 
   return r;
 }
@@ -373,12 +372,7 @@ void LibuvStreamWrap::AfterUvWrite(uv_write_t* req, int status) {
   req_wrap->Done(status);
 }
 
-void LibuvStreamWrap::Close(v8::Local<v8::Value> close_callback) {
-  ReadStop();
-  HandleWrap::Close(close_callback);
-}
-
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(stream_wrap,
-                                  node::LibuvStreamWrap::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(stream_wrap,
+                                   node::LibuvStreamWrap::Initialize)

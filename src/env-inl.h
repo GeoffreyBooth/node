@@ -32,7 +32,7 @@
 #include "v8.h"
 #include "node_perf_common.h"
 #include "node_context_data.h"
-#include "tracing/agent.h"
+#include "node_worker.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -218,8 +218,8 @@ inline Environment::AsyncCallbackScope::~AsyncCallbackScope() {
   env_->makecallback_cntr_--;
 }
 
-inline bool Environment::AsyncCallbackScope::in_makecallback() const {
-  return env_->makecallback_cntr_ > 1;
+inline size_t Environment::makecallback_depth() const {
+  return makecallback_cntr_;
 }
 
 inline Environment::ImmediateInfo::ImmediateInfo(v8::Isolate* isolate)
@@ -269,10 +269,6 @@ inline bool Environment::TickInfo::has_scheduled() const {
   return fields_[kHasScheduled] == 1;
 }
 
-inline bool Environment::TickInfo::has_thrown() const {
-  return fields_[kHasThrown] == 1;
-}
-
 inline bool Environment::TickInfo::has_promise_rejections() const {
   return fields_[kHasPromiseRejections] == 1;
 }
@@ -281,14 +277,13 @@ inline void Environment::TickInfo::promise_rejections_toggle_on() {
   fields_[kHasPromiseRejections] = 1;
 }
 
-inline void Environment::TickInfo::set_has_thrown(bool state) {
-  fields_[kHasThrown] = state ? 1 : 0;
-}
-
 inline void Environment::AssignToContext(v8::Local<v8::Context> context,
                                          const ContextInfo& info) {
   context->SetAlignedPointerInEmbedderData(
       ContextEmbedderIndex::kEnvironment, this);
+  // Used by EnvPromiseHook to know that we are on a node context.
+  context->SetAlignedPointerInEmbedderData(
+    ContextEmbedderIndex::kContextTag, Environment::kNodeContextTagPtr);
 #if HAVE_INSPECTOR
   inspector_agent()->ContextCreated(context, info);
 #endif  // HAVE_INSPECTOR
@@ -330,8 +325,16 @@ inline v8::Isolate* Environment::isolate() const {
   return isolate_;
 }
 
-inline tracing::Agent* Environment::tracing_agent() const {
-  return tracing_agent_;
+inline tracing::AgentWriterHandle* Environment::tracing_agent_writer() const {
+  return tracing_agent_writer_;
+}
+
+inline Environment* Environment::from_timer_handle(uv_timer_t* handle) {
+  return ContainerOf(&Environment::timer_handle_, handle);
+}
+
+inline uv_timer_t* Environment::timer_handle() {
+  return &timer_handle_;
 }
 
 inline Environment* Environment::from_immediate_check_handle(
@@ -427,6 +430,11 @@ inline void Environment::set_abort_on_uncaught_exception(bool value) {
 inline AliasedBuffer<uint32_t, v8::Uint32Array>&
 Environment::should_abort_on_uncaught_toggle() {
   return should_abort_on_uncaught_toggle_;
+}
+
+inline AliasedBuffer<uint8_t, v8::Uint8Array>&
+Environment::trace_category_state() {
+  return trace_category_state_;
 }
 
 Environment::ShouldNotAbortOnUncaughtScope::ShouldNotAbortOnUncaughtScope(
@@ -598,11 +606,11 @@ inline bool Environment::is_main_thread() const {
   return thread_id_ == 0;
 }
 
-inline double Environment::thread_id() const {
+inline uint64_t Environment::thread_id() const {
   return thread_id_;
 }
 
-inline void Environment::set_thread_id(double id) {
+inline void Environment::set_thread_id(uint64_t id) {
   thread_id_ = id;
 }
 
@@ -621,6 +629,11 @@ inline void Environment::add_sub_worker_context(worker::Worker* context) {
 
 inline void Environment::remove_sub_worker_context(worker::Worker* context) {
   sub_worker_contexts_.erase(context);
+}
+
+inline bool Environment::is_stopping_worker() const {
+  CHECK(!is_main_thread());
+  return worker_context_->is_stopped();
 }
 
 inline performance::performance_state* Environment::performance_state() {
@@ -675,17 +688,41 @@ inline void Environment::ThrowUVException(int errorno,
 inline v8::Local<v8::FunctionTemplate>
     Environment::NewFunctionTemplate(v8::FunctionCallback callback,
                                      v8::Local<v8::Signature> signature,
-                                     v8::ConstructorBehavior behavior) {
+                                     v8::ConstructorBehavior behavior,
+                                     v8::SideEffectType side_effect_type) {
   v8::Local<v8::External> external = as_external();
   return v8::FunctionTemplate::New(isolate(), callback, external,
-                                   signature, 0, behavior);
+                                   signature, 0, behavior, side_effect_type);
 }
 
 inline void Environment::SetMethod(v8::Local<v8::Object> that,
                                    const char* name,
                                    v8::FunctionCallback callback) {
   v8::Local<v8::Function> function =
-      NewFunctionTemplate(callback)->GetFunction();
+      NewFunctionTemplate(callback,
+                          v8::Local<v8::Signature>(),
+                          // TODO(TimothyGu): Investigate if SetMethod is ever
+                          // used for constructors.
+                          v8::ConstructorBehavior::kAllow,
+                          v8::SideEffectType::kHasSideEffect)->GetFunction();
+  // kInternalized strings are created in the old space.
+  const v8::NewStringType type = v8::NewStringType::kInternalized;
+  v8::Local<v8::String> name_string =
+      v8::String::NewFromUtf8(isolate(), name, type).ToLocalChecked();
+  that->Set(name_string, function);
+  function->SetName(name_string);  // NODE_SET_METHOD() compatibility.
+}
+
+inline void Environment::SetMethodNoSideEffect(v8::Local<v8::Object> that,
+                                               const char* name,
+                                               v8::FunctionCallback callback) {
+  v8::Local<v8::Function> function =
+      NewFunctionTemplate(callback,
+                          v8::Local<v8::Signature>(),
+                          // TODO(TimothyGu): Investigate if SetMethod is ever
+                          // used for constructors.
+                          v8::ConstructorBehavior::kAllow,
+                          v8::SideEffectType::kHasNoSideEffect)->GetFunction();
   // kInternalized strings are created in the old space.
   const v8::NewStringType type = v8::NewStringType::kInternalized;
   v8::Local<v8::String> name_string =
@@ -699,7 +736,24 @@ inline void Environment::SetProtoMethod(v8::Local<v8::FunctionTemplate> that,
                                         v8::FunctionCallback callback) {
   v8::Local<v8::Signature> signature = v8::Signature::New(isolate(), that);
   v8::Local<v8::FunctionTemplate> t =
-      NewFunctionTemplate(callback, signature, v8::ConstructorBehavior::kThrow);
+      NewFunctionTemplate(callback, signature, v8::ConstructorBehavior::kThrow,
+                          v8::SideEffectType::kHasSideEffect);
+  // kInternalized strings are created in the old space.
+  const v8::NewStringType type = v8::NewStringType::kInternalized;
+  v8::Local<v8::String> name_string =
+      v8::String::NewFromUtf8(isolate(), name, type).ToLocalChecked();
+  that->PrototypeTemplate()->Set(name_string, t);
+  t->SetClassName(name_string);  // NODE_SET_PROTOTYPE_METHOD() compatibility.
+}
+
+inline void Environment::SetProtoMethodNoSideEffect(
+    v8::Local<v8::FunctionTemplate> that,
+    const char* name,
+    v8::FunctionCallback callback) {
+  v8::Local<v8::Signature> signature = v8::Signature::New(isolate(), that);
+  v8::Local<v8::FunctionTemplate> t =
+      NewFunctionTemplate(callback, signature, v8::ConstructorBehavior::kThrow,
+                          v8::SideEffectType::kHasNoSideEffect);
   // kInternalized strings are created in the old space.
   const v8::NewStringType type = v8::NewStringType::kInternalized;
   v8::Local<v8::String> name_string =
@@ -711,7 +765,26 @@ inline void Environment::SetProtoMethod(v8::Local<v8::FunctionTemplate> that,
 inline void Environment::SetTemplateMethod(v8::Local<v8::FunctionTemplate> that,
                                            const char* name,
                                            v8::FunctionCallback callback) {
-  v8::Local<v8::FunctionTemplate> t = NewFunctionTemplate(callback);
+  v8::Local<v8::FunctionTemplate> t =
+      NewFunctionTemplate(callback, v8::Local<v8::Signature>(),
+                          v8::ConstructorBehavior::kAllow,
+                          v8::SideEffectType::kHasSideEffect);
+  // kInternalized strings are created in the old space.
+  const v8::NewStringType type = v8::NewStringType::kInternalized;
+  v8::Local<v8::String> name_string =
+      v8::String::NewFromUtf8(isolate(), name, type).ToLocalChecked();
+  that->Set(name_string, t);
+  t->SetClassName(name_string);  // NODE_SET_METHOD() compatibility.
+}
+
+inline void Environment::SetTemplateMethodNoSideEffect(
+    v8::Local<v8::FunctionTemplate> that,
+    const char* name,
+    v8::FunctionCallback callback) {
+  v8::Local<v8::FunctionTemplate> t =
+      NewFunctionTemplate(callback, v8::Local<v8::Signature>(),
+                          v8::ConstructorBehavior::kAllow,
+                          v8::SideEffectType::kHasNoSideEffect);
   // kInternalized strings are created in the old space.
   const v8::NewStringType type = v8::NewStringType::kInternalized;
   v8::Local<v8::String> name_string =
@@ -741,6 +814,22 @@ size_t Environment::CleanupHookCallback::Hash::operator()(
 bool Environment::CleanupHookCallback::Equal::operator()(
     const CleanupHookCallback& a, const CleanupHookCallback& b) const {
   return a.fn_ == b.fn_ && a.arg_ == b.arg_;
+}
+
+BaseObject* Environment::CleanupHookCallback::GetBaseObject() const {
+  if (fn_ == BaseObject::DeleteMe)
+    return static_cast<BaseObject*>(arg_);
+  else
+    return nullptr;
+}
+
+template <typename T>
+void Environment::ForEachBaseObject(T&& iterator) {
+  for (const auto& hook : cleanup_hooks_) {
+    BaseObject* obj = hook.GetBaseObject();
+    if (obj != nullptr)
+      iterator(obj);
+  }
 }
 
 #define VP(PropertyName, StringValue) V(v8::Private, PropertyName)

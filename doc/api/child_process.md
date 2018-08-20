@@ -131,6 +131,9 @@ exec('"my script.cmd" a b', (err, stdout, stderr) => {
 <!-- YAML
 added: v0.1.90
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/21316
+    description: The `windowsHide` option now defaults to `true`.
   - version: v8.8.0
     pr-url: https://github.com/nodejs/node/pull/15380
     description: The `windowsHide` option is supported now.
@@ -153,7 +156,7 @@ changes:
   * `uid` {number} Sets the user identity of the process (see setuid(2)).
   * `gid` {number} Sets the group identity of the process (see setgid(2)).
   * `windowsHide` {boolean} Hide the subprocess console window that would
-    normally be created on Windows systems. **Default:** `false`.
+    normally be created on Windows systems. **Default:** `true`.
 * `callback` {Function} called with the output when process terminates.
   * `error` {Error}
   * `stdout` {string|Buffer}
@@ -177,18 +180,6 @@ exec('echo "The \\$HOME variable is $HOME"');
 **Never pass unsanitized user input to this function. Any input containing shell
 metacharacters may be used to trigger arbitrary command execution.**
 
-```js
-const { exec } = require('child_process');
-exec('cat *.js bad_file | wc -l', (error, stdout, stderr) => {
-  if (error) {
-    console.error(`exec error: ${error}`);
-    return;
-  }
-  console.log(`stdout: ${stdout}`);
-  console.log(`stderr: ${stderr}`);
-});
-```
-
 If a `callback` function is provided, it is called with the arguments
 `(error, stdout, stderr)`. On success, `error` will be `null`. On error,
 `error` will be an instance of [`Error`][]. The `error.code` property will be
@@ -202,6 +193,18 @@ the output as UTF-8 and pass strings to the callback. The `encoding` option
 can be used to specify the character encoding used to decode the stdout and
 stderr output. If `encoding` is `'buffer'`, or an unrecognized character
 encoding, `Buffer` objects will be passed to the callback instead.
+
+```js
+const { exec } = require('child_process');
+exec('cat *.js missing_file | wc -l', (error, stdout, stderr) => {
+  if (error) {
+    console.error(`exec error: ${error}`);
+    return;
+  }
+  console.log(`stdout: ${stdout}`);
+  console.log(`stderr: ${stderr}`);
+});
+```
 
 If `timeout` is greater than `0`, the parent will send the signal
 identified by the `killSignal` property (the default is `'SIGTERM'`) if the
@@ -232,6 +235,9 @@ lsExample();
 <!-- YAML
 added: v0.1.91
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/21316
+    description: The `windowsHide` option now defaults to `true`.
   - version: v8.8.0
     pr-url: https://github.com/nodejs/node/pull/15380
     description: The `windowsHide` option is supported now.
@@ -251,7 +257,7 @@ changes:
   * `uid` {number} Sets the user identity of the process (see setuid(2)).
   * `gid` {number} Sets the group identity of the process (see setgid(2)).
   * `windowsHide` {boolean} Hide the subprocess console window that would
-    normally be created on Windows systems. **Default:** `false`.
+    normally be created on Windows systems. **Default:** `true`.
   * `windowsVerbatimArguments` {boolean} No quoting or escaping of arguments is
     done on Windows. Ignored on Unix. **Default:** `false`.
   * `shell` {boolean|string} If `true`, runs `command` inside of a shell. Uses
@@ -375,6 +381,9 @@ The `shell` option available in [`child_process.spawn()`][] is not supported by
 <!-- YAML
 added: v0.1.90
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/21316
+    description: The `windowsHide` option now defaults to `true`.
   - version: v8.8.0
     pr-url: https://github.com/nodejs/node/pull/15380
     description: The `windowsHide` option is supported now.
@@ -408,7 +417,7 @@ changes:
     done on Windows. Ignored on Unix. This is set to `true` automatically
     when `shell` is specified. **Default:** `false`.
   * `windowsHide` {boolean} Hide the subprocess console window that would
-    normally be created on Windows systems. **Default:** `false`.
+    normally be created on Windows systems. **Default:** `true`.
 * Returns: {ChildProcess}
 
 The `child_process.spawn()` method spawns a new process using the given
@@ -527,11 +536,12 @@ process will be made the leader of a new process group and session. Note that
 child processes may continue running after the parent exits regardless of
 whether they are detached or not. See setsid(2) for more information.
 
-By default, the parent will wait for the detached child to exit. To prevent
-the parent from waiting for a given `subprocess`, use the `subprocess.unref()`
-method. Doing so will cause the parent's event loop to not include the child in
-its reference count, allowing the parent to exit independently of the child,
-unless there is an established IPC channel between the child and parent.
+By default, the parent will wait for the detached child to exit. To prevent the
+parent from waiting for a given `subprocess` to exit, use the
+`subprocess.unref()` method. Doing so will cause the parent's event loop to not
+include the child in its reference count, allowing the parent to exit
+independently of the child, unless there is an established IPC channel between
+the child and the parent.
 
 When using the `detached` option to start a long-running process, the process
 will not stay running in the background after the parent exits unless it is
@@ -589,8 +599,7 @@ For convenience, `options.stdio` may be one of the following strings:
 
 * `'pipe'` - equivalent to `['pipe', 'pipe', 'pipe']` (the default)
 * `'ignore'` - equivalent to `['ignore', 'ignore', 'ignore']`
-* `'inherit'` - equivalent to `[process.stdin, process.stdout, process.stderr]`
-   or `[0,1,2]`
+* `'inherit'` - equivalent to `['inherit', 'inherit', 'inherit']` or `[0, 1, 2]`
 
 Otherwise, the value of `options.stdio` is an array where each index corresponds
 to an fd in the child. The fds 0, 1, and 2 correspond to stdin, stdout,
@@ -616,16 +625,20 @@ pipes between the parent and child. The value is one of the following:
    will always open fds 0 - 2 for the processes it spawns, setting the fd to
    `'ignore'` will cause Node.js to open `/dev/null` and attach it to the
    child's fd.
-4. {Stream} object - Share a readable or writable stream that refers to a tty,
+4. `'inherit'` - Pass through the corresponding stdio stream to/from the
+   parent process.  In the first three positions, this is equivalent to
+   `process.stdin`, `process.stdout`, and `process.stderr`, respectively.  In
+   any other position, equivalent to `'ignore'`.
+5. {Stream} object - Share a readable or writable stream that refers to a tty,
    file, socket, or a pipe with the child process. The stream's underlying
    file descriptor is duplicated in the child process to the fd that
    corresponds to the index in the `stdio` array. Note that the stream must
    have an underlying descriptor (file streams do not until the `'open'`
    event has occurred).
-5. Positive integer - The integer value is interpreted as a file descriptor
+6. Positive integer - The integer value is interpreted as a file descriptor
    that is currently open in the parent process. It is shared with the child
    process, similar to how {Stream} objects can be shared.
-6. `null`, `undefined` - Use default value. For stdio fds 0, 1, and 2 (in other
+7. `null`, `undefined` - Use default value. For stdio fds 0, 1, and 2 (in other
    words, stdin, stdout, and stderr) a pipe is created. For fd 3 and up, the
    default is `'ignore'`.
 
@@ -652,6 +665,12 @@ child registers an event handler for the [`'disconnect'`][] event
 or the [`'message'`][] event. This allows the child to exit
 normally without the process being held open by the open IPC channel.*
 
+On UNIX-like operating systems, the [`child_process.spawn()`][] method
+performs memory operations synchronously before decoupling the event loop
+from the child. Applications with a large memory footprint may find frequent
+[`child_process.spawn()`][] calls to be a bottleneck. For more information,
+see [V8 issue 7381](https://bugs.chromium.org/p/v8/issues/detail?id=7381).
+
 See also: [`child_process.exec()`][] and [`child_process.fork()`][].
 
 ## Synchronous Process Creation
@@ -669,6 +688,9 @@ configuration at startup.
 <!-- YAML
 added: v0.11.12
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/21316
+    description: The `windowsHide` option now defaults to `true`.
   - version: v8.8.0
     pr-url: https://github.com/nodejs/node/pull/15380
     description: The `windowsHide` option is supported now.
@@ -702,7 +724,7 @@ changes:
   * `encoding` {string} The encoding used for all stdio inputs and outputs.
     **Default:** `'buffer'`.
   * `windowsHide` {boolean} Hide the subprocess console window that would
-    normally be created on Windows systems. **Default:** `false`.
+    normally be created on Windows systems. **Default:** `true`.
   * `shell` {boolean|string} If `true`, runs `command` inside of a shell. Uses
     `'/bin/sh'` on UNIX, and `process.env.ComSpec` on Windows. A different
     shell can be specified as a string. See [Shell Requirements][] and
@@ -731,6 +753,9 @@ arbitrary command execution.**
 <!-- YAML
 added: v0.11.12
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/21316
+    description: The `windowsHide` option now defaults to `true`.
   - version: v8.8.0
     pr-url: https://github.com/nodejs/node/pull/15380
     description: The `windowsHide` option is supported now.
@@ -763,7 +788,7 @@ changes:
   * `encoding` {string} The encoding used for all stdio inputs and outputs.
     **Default:** `'buffer'`.
   * `windowsHide` {boolean} Hide the subprocess console window that would
-    normally be created on Windows systems. **Default:** `false`.
+    normally be created on Windows systems. **Default:** `true`.
 * Returns: {Buffer|string} The stdout from the command.
 
 The `child_process.execSync()` method is generally identical to
@@ -785,6 +810,9 @@ metacharacters may be used to trigger arbitrary command execution.**
 <!-- YAML
 added: v0.11.12
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/21316
+    description: The `windowsHide` option now defaults to `true`.
   - version: v8.8.0
     pr-url: https://github.com/nodejs/node/pull/15380
     description: The `windowsHide` option is supported now.
@@ -805,6 +833,8 @@ changes:
   * `cwd` {string} Current working directory of the child process.
   * `input` {string|Buffer|Uint8Array} The value which will be passed as stdin
     to the spawned process. Supplying this value will override `stdio[0]`.
+  * `argv0` {string} Explicitly set the value of `argv[0]` sent to the child
+    process. This will be set to `command` if not specified.
   * `stdio` {string|Array} Child's stdio configuration.
   * `env` {Object} Environment key-value pairs.
   * `uid` {number} Sets the user identity of the process (see setuid(2)).
@@ -826,7 +856,7 @@ changes:
     done on Windows. Ignored on Unix. This is set to `true` automatically
     when `shell` is specified. **Default:** `false`.
   * `windowsHide` {boolean} Hide the subprocess console window that would
-    normally be created on Windows systems. **Default:** `false`.
+    normally be created on Windows systems. **Default:** `true`.
 * Returns: {Object}
   * `pid` {number} Pid of the child process.
   * `output` {Array} Array of results from stdio output.
@@ -1068,6 +1098,27 @@ const grep = spawn('grep', ['ssh']);
 
 console.log(`Spawned child pid: ${grep.pid}`);
 grep.stdin.end();
+```
+
+### subprocess.ref()
+<!-- YAML
+added: v0.7.10
+-->
+
+Calling `subprocess.ref()` after making a call to `subprocess.unref()` will
+restore the removed reference count for the child process, forcing the parent
+to wait for the child to exit before exiting itself.
+
+```js
+const { spawn } = require('child_process');
+
+const subprocess = spawn(process.argv[0], ['child_program.js'], {
+  detached: true,
+  stdio: 'ignore'
+});
+
+subprocess.unref();
+subprocess.ref();
 ```
 
 ### subprocess.send(message[, sendHandle[, options]][, callback])
@@ -1337,6 +1388,29 @@ then this will be `null`.
 
 `subprocess.stdout` is an alias for `subprocess.stdio[1]`. Both properties will
 refer to the same value.
+
+### subprocess.unref()
+<!-- YAML
+added: v0.7.10
+-->
+
+By default, the parent will wait for the detached child to exit. To prevent the
+parent from waiting for a given `subprocess` to exit, use the
+`subprocess.unref()` method. Doing so will cause the parent's event loop to not
+include the child in its reference count, allowing the parent to exit
+independently of the child, unless there is an established IPC channel between
+the child and the parent.
+
+```js
+const { spawn } = require('child_process');
+
+const subprocess = spawn(process.argv[0], ['child_program.js'], {
+  detached: true,
+  stdio: 'ignore'
+});
+
+subprocess.unref();
+```
 
 ## `maxBuffer` and Unicode
 

@@ -225,7 +225,11 @@ class Environment;
 class MultiIsolatePlatform : public v8::Platform {
  public:
   virtual ~MultiIsolatePlatform() { }
-  virtual void DrainBackgroundTasks(v8::Isolate* isolate) = 0;
+  // Returns true if work was dispatched or executed. New tasks that are
+  // posted during flushing of the queue are postponed until the next
+  // flushing.
+  virtual bool FlushForegroundTasks(v8::Isolate* isolate) = 0;
+  virtual void DrainTasks(v8::Isolate* isolate) = 0;
   virtual void CancelPendingDelayedTasks(v8::Isolate* isolate) = 0;
 
   // These will be called by the `IsolateData` creation/destruction functions.
@@ -237,9 +241,7 @@ class MultiIsolatePlatform : public v8::Platform {
 // Creates a new isolate with Node.js-specific settings.
 NODE_EXTERN v8::Isolate* NewIsolate(ArrayBufferAllocator* allocator);
 
-// Creates a new context with Node.js-specific tweaks.  Currently, it removes
-// the `v8BreakIterator` property from the global `Intl` object if present.
-// See https://github.com/nodejs/node/issues/14909 for more info.
+// Creates a new context with Node.js-specific tweaks.
 NODE_EXTERN v8::Local<v8::Context> NewContext(
     v8::Isolate* isolate,
     v8::Local<v8::ObjectTemplate> object_template =
@@ -301,7 +303,8 @@ NODE_EXTERN struct uv_loop_s* GetCurrentEventLoop(v8::Isolate* isolate);
     v8::Isolate* isolate = target->GetIsolate();                              \
     v8::Local<v8::Context> context = isolate->GetCurrentContext();            \
     v8::Local<v8::String> constant_name =                                     \
-        v8::String::NewFromUtf8(isolate, #constant);                          \
+        v8::String::NewFromUtf8(isolate, #constant,                           \
+            v8::NewStringType::kInternalized).ToLocalChecked();               \
     v8::Local<v8::Number> constant_value =                                    \
         v8::Number::New(isolate, static_cast<double>(constant));              \
     v8::PropertyAttribute constant_attributes =                               \
@@ -342,7 +345,8 @@ inline void NODE_SET_METHOD(v8::Local<v8::Template> recv,
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::FunctionTemplate> t = v8::FunctionTemplate::New(isolate,
                                                                 callback);
-  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name);
+  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name,
+      v8::NewStringType::kInternalized).ToLocalChecked();
   t->SetClassName(fn_name);
   recv->Set(fn_name, t);
 }
@@ -356,7 +360,8 @@ inline void NODE_SET_METHOD(v8::Local<v8::Object> recv,
   v8::Local<v8::FunctionTemplate> t = v8::FunctionTemplate::New(isolate,
                                                                 callback);
   v8::Local<v8::Function> fn = t->GetFunction();
-  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name);
+  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name,
+      v8::NewStringType::kInternalized).ToLocalChecked();
   fn->SetName(fn_name);
   recv->Set(fn_name, fn);
 }
@@ -372,7 +377,8 @@ inline void NODE_SET_PROTOTYPE_METHOD(v8::Local<v8::FunctionTemplate> recv,
   v8::Local<v8::Signature> s = v8::Signature::New(isolate, recv);
   v8::Local<v8::FunctionTemplate> t =
       v8::FunctionTemplate::New(isolate, callback, v8::Local<v8::Value>(), s);
-  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name);
+  v8::Local<v8::String> fn_name = v8::String::NewFromUtf8(isolate, name,
+      v8::NewStringType::kInternalized).ToLocalChecked();
   t->SetClassName(fn_name);
   recv->PrototypeTemplate()->Set(fn_name, t);
 }
@@ -577,6 +583,28 @@ extern "C" NODE_EXTERN void node_module_register(void* mod);
  */
 #define NODE_MODULE_DECL /* nothing */
 
+#define NODE_MODULE_INITIALIZER_BASE node_register_module_v
+
+#define NODE_MODULE_INITIALIZER_X(base, version)                      \
+    NODE_MODULE_INITIALIZER_X_HELPER(base, version)
+
+#define NODE_MODULE_INITIALIZER_X_HELPER(base, version) base##version
+
+#define NODE_MODULE_INITIALIZER                                       \
+  NODE_MODULE_INITIALIZER_X(NODE_MODULE_INITIALIZER_BASE,             \
+      NODE_MODULE_VERSION)
+
+#define NODE_MODULE_INIT()                                            \
+  extern "C" NODE_MODULE_EXPORT void                                  \
+  NODE_MODULE_INITIALIZER(v8::Local<v8::Object> exports,              \
+                          v8::Local<v8::Value> module,                \
+                          v8::Local<v8::Context> context);            \
+  NODE_MODULE_CONTEXT_AWARE(NODE_GYP_MODULE_NAME,                     \
+                            NODE_MODULE_INITIALIZER)                  \
+  void NODE_MODULE_INITIALIZER(v8::Local<v8::Object> exports,         \
+                               v8::Local<v8::Value> module,           \
+                               v8::Local<v8::Context> context)
+
 /* Called after the event loop exits but before the VM is disposed.
  * Callbacks are run in reverse order of registration, i.e. newest first.
  */
@@ -659,6 +687,10 @@ class InternalCallbackScope;
  *
  * This object should be stack-allocated to ensure that it is contained in a
  * valid HandleScope.
+ *
+ * Exceptions happening within this scope will be treated like uncaught
+ * exceptions. If this behaviour is undesirable, a new `v8::TryCatch` scope
+ * needs to be created inside of this scope.
  */
 class NODE_EXTERN CallbackScope {
  public:

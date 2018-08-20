@@ -58,6 +58,7 @@ const customTypesMap = {
   'EventEmitter': 'events.html#events_class_eventemitter',
 
   'FileHandle': 'fs.html#fs_class_filehandle',
+  'fs.Dirent': 'fs.html#fs_class_fs_dirent',
   'fs.FSWatcher': 'fs.html#fs_class_fs_fswatcher',
   'fs.ReadStream': 'fs.html#fs_class_fs_readstream',
   'fs.Stats': 'fs.html#fs_class_fs_stats',
@@ -118,7 +119,9 @@ const customTypesMap = {
   'URL': 'url.html#url_the_whatwg_url_api',
   'URLSearchParams': 'url.html#url_class_urlsearchparams',
 
-  'MessagePort': 'worker.html#worker_class_messageport'
+  'MessagePort': 'worker_threads.html#worker_threads_class_messageport',
+
+  'zlib options': 'zlib.html#zlib_class_options',
 };
 
 const arrayPart = /(?:\[])+$/;
