@@ -198,6 +198,7 @@ constexpr size_t kFsStatsBufferLength =
   V(crypto_rsa_pss_string, "rsa-pss")                                          \
   V(cwd_string, "cwd")                                                         \
   V(data_string, "data")                                                       \
+  V(default_string, "default")                                                 \
   V(dest_string, "dest")                                                       \
   V(destroyed_string, "destroyed")                                             \
   V(detached_string, "detached")                                               \
@@ -275,6 +276,7 @@ constexpr size_t kFsStatsBufferLength =
   V(netmask_string, "netmask")                                                 \
   V(next_string, "next")                                                       \
   V(nistcurve_string, "nistCurve")                                             \
+  V(node_string, "node")                                                       \
   V(nsname_string, "nsname")                                                   \
   V(ocsp_request_string, "OCSPRequest")                                        \
   V(oncertcb_string, "oncertcb")                                               \

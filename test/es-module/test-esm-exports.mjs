@@ -22,7 +22,11 @@ import { requireFixture, importFixture } from '../fixtures/pkgexports.mjs';
     ['pkgexports/fallbackfile', { default: 'asdf' }],
     // Dot main
     ['pkgexports', { default: 'asdf' }],
+    // Conditional split for require
+    ['pkgexports/condition', isRequire ? { default: 'encoded path' } :
+      { default: 'asdf' }]
   ]);
+
   for (const [validSpecifier, expected] of validSpecifiers) {
     if (validSpecifier === null) continue;
 

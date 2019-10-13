@@ -223,12 +223,13 @@ RESOLVE_BARE_SPECIFIER(DIR, X)
 2. If X matches this pattern and DIR/name/package.json is a file:
    a. Parse DIR/name/package.json, and look for "exports" field.
    b. If "exports" is null or undefined, GOTO 3.
-   c. Find the longest key in "exports" that the subpath starts with.
-   d. If no such key can be found, throw "not found".
-   e. let RESOLVED_URL =
+   c. If "exports" is a string, treat it as having that "." object property.
+   d. Find the longest key in "exports" that the subpath starts with.
+   e. If no such key can be found, throw "not found".
+   f. let RESOLVED_URL =
         PACKAGE_EXPORTS_TARGET_RESOLVE(pathToFileURL(DIR/name), exports[key],
         subpath.slice(key.length)), as defined in the esm resolver.
-   f. return fileURLToPath(RESOLVED_URL)
+   g. return fileURLToPath(RESOLVED_URL)
 3. return DIR/X
 ```
 

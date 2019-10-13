@@ -219,46 +219,10 @@ The `"main"` field can point to exactly one file, regardless of whether the
 package is referenced via `require` (in a CommonJS context) or `import` (in an
 ES module context).
 
-#### Compatibility with CommonJS-Only Versions of Node.js
-
-Prior to the introduction of support for ES modules in Node.js, it was a common
-pattern for package authors to include both CommonJS and ES module JavaScript
-sources in their package, with `package.json` `"main"` specifying the CommonJS
-entry point and `package.json` `"module"` specifying the ES module entry point.
-This enabled Node.js to run the CommonJS entry point while build tools such as
-bundlers used the ES module entry point, since Node.js ignored (and still
-ignores) `"module"`.
-
-Node.js can now run ES module entry points, but it remains impossible for a
-package to define separate CommonJS and ES module entry points. This is for good
-reason: the `pkg` variable created from `import pkg from 'pkg'` is not the same
-singleton as the `pkg` variable created from `const pkg = require('pkg')`, so if
-both are referenced within the same app (including dependencies), unexpected
-behavior might occur.
-
-There are two general approaches to addressing this limitation while still
-publishing a package that contains both CommonJS and ES module sources:
-
-1. Document a new ES module entry point that’s not the package `"main"`, e.g.
-   `import pkg from 'pkg/module.mjs'` (or `import 'pkg/esm'`, if using [package
-   exports][]). The package `"main"` would still point to a CommonJS file, and
-   thus the package would remain compatible with older versions of Node.js that
-   lack support for ES modules.
-
-1. Switch the package `"main"` entry point to an ES module file as part of a
-   breaking change version bump. This version and above would only be usable on
-   ES module-supporting versions of Node.js. If the package still contains a
-   CommonJS version, it would be accessible via a path within the package, e.g.
-   `require('pkg/commonjs')`; this is essentially the inverse of the previous
-   approach. Package consumers who are using CommonJS-only versions of Node.js
-   would need to update their code from `require('pkg')` to e.g.
-   `require('pkg/commonjs')`.
-
-Of course, a package could also include only CommonJS or only ES module sources.
-An existing package could make a semver major bump to an ES module-only version,
-that would only be supported in ES module-supporting versions of Node.js (and
-other runtimes). New packages could be published containing only ES module
-sources, and would be compatible only with ES module-supporting runtimes.
+To define a different package entry point for CommonJS and ES Module
+environments, see the
+(section on creating dual CommonJS / ES module packages)
+[#esm_publishing_dual_commonjs_es_module_slash_commonjs_packages].
 
 ### Package Exports
 
@@ -313,33 +277,6 @@ If a package has no exports, setting `"exports": false` can be used instead of
 `"exports": {}` to indicate the package does not intend for submodules to be
 exposed.
 
-Exports can also be used to map the main entry point of a package:
-
-<!-- eslint-skip -->
-```js
-// ./node_modules/es-module-package/package.json
-{
-  "exports": {
-    ".": "./main.js"
-  }
-}
-```
-
-where the "." indicates loading the package without any subpath. Exports will
-always override any existing `"main"` value for both CommonJS and
-ES module packages.
-
-For packages with only a main entry point, an `"exports"` value of just
-a string is also supported:
-
-<!-- eslint-skip -->
-```js
-// ./node_modules/es-module-package/package.json
-{
-  "exports": "./main.js"
-}
-```
-
 Any invalid exports entries will be ignored. This includes exports not
 starting with `"./"` or a missing trailing `"/"` for directory exports.
 
@@ -357,6 +294,179 @@ in order to be forward-compatible with fallback workflows in future:
 
 Since `"not:valid"` is not a supported target, `"./submodule.js"` is used
 instead as the fallback, as if it were the only target.
+
+Defining a `"."` export will define the main entry point for the package,
+and will always take precedence over the `"main"` field in the `package.json`.
+
+This allows defining a different entry point for Node.js versions that support
+ECMAScript modules and versions that don't, for example:
+
+<!-- eslint-skip -->
+```js
+{
+  "main": "./main-legacy.cjs",
+  "exports": {
+    ".": "./main-modern.mjs"
+  }
+}
+```
+
+#### Conditional Exports
+
+Conditional exports provide a way to map to different paths depending on
+certain conditions. They are supported for both CommonJS and ES module imports.
+
+For example, a package that wants to provide different ES module exports for
+Node.js and the browser can be written:
+
+<!-- eslint-skip -->
+```js
+// ./node_modules/pkg/package.json
+{
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    "./feature": {
+      "browser": "./feature-browser.js",
+      "node": "./feature-server.js"
+    }
+  }
+}
+```
+
+When an exports target condition object is provided like the above, the first
+matching key in the object that is supported by the current environment will
+be resolved.
+
+Node.js will match the `"node"` condition, resulting in `pkg/feature-server.js`
+being used. Browser tooling with support for exports can then resolve the
+`"browser"` condition.
+
+The conditions supported in Node.js are matched in the following order:
+
+1. `"require"` - matched when the package is imported via CommonJS `require()`.
+2. `"node"` - matched for any Node.js environment. Can be a CommonJS or ES
+   module file.
+3. `"default"` - the generic fallback that will always match if no other
+   more specific condition is matched first. Can be a CommonJS or ES module
+   file.
+
+Using the `"require"` condition it is possible to define a package that will
+have a different exported value for CommonJS and ES modules, which is a hazard
+in that it can result in having two separate instances of the same package in
+use in an application, which can cause a number of bugs. For a safe way to
+define packages for use via both `require()` and `import`, see the next section.
+
+Other conditions such as `"browser"`, `"electron"`, `"deno"`, `"react-native"`
+etc. can be defined in other runtimes or tools.
+
+#### Publishing Dual CommonJS / ES Module Packages
+
+Prior to the introduction of support for ES modules in Node.js, it was a common
+pattern for package authors to include both CommonJS and ES module JavaScript
+sources in their package, with `package.json` `"main"` specifying the CommonJS
+entry point and `package.json` `"module"` specifying the ES module entry point.
+This enabled Node.js to run the CommonJS entry point while build tools such as
+bundlers used the ES module entry point, since Node.js ignored (and still
+ignores) `"module"`.
+
+In addition, there is a hazard in doing this in that the `pkg` variable created
+from `import pkg from 'pkg'` is not the same singleton as the `pkg` variable
+created from `const pkg = require('pkg')`, so if both are referenced within the
+same app (including dependencies), unexpected behavior might occur.
+
+There are three general approaches to addressing this limitation while still
+publishing a package that caters to both CommonJS and ES module consumers:
+
+1. Write the package in CommonJS or transpile the package into CommonJS, and
+  create an ES module wrapper file to provide support for named exports (for
+  example `import { name } from 'pkg'` instead of
+  `import pkg from 'pkg'; pkg.name`). Using conditional exports, the ES module
+  wrapper is used for `import` and the CommonJS entry point for `require`,
+  without introducing the hazard described above.
+
+<!-- eslint-skip -->
+    ```js
+    // ./node_modules/pkg/package.json
+    {
+      "exports": {
+        ".": {
+          "require": "./index.cjs",
+          "default": "./wrapper.mjs"
+        }
+      }
+    }
+    ```
+
+    ```js
+    // ./node_modules/pkg/index.cjs
+    exports.name = 'value';
+    ```
+
+    ```js
+    // ./node_modules/pkg/wrapper.mjs
+    import cjsModule from './index.cjs';
+    export const name = cjsModule.name;
+    ```
+
+1. Document a new ES module entry point that’s not the package `"main"`, e.g.
+  `import pkg from 'pkg/module'`. The package `"main"` would still point to
+  a CommonJS file, and thus the package would remain compatible with older
+  versions of Node.js that lack support for ES modules.
+
+<!-- eslint-skip -->
+    ```js
+    // ./node_modules/pkg/package.json
+    {
+      "type": "module",
+      "main": "./index.cjs",
+      "exports": {
+        "./module": "./index.js"
+      }
+    }
+    ```
+
+1. Set the package `"main"` entry point to an ES module file. This version and
+  above would only be usable in ES module-supporting versions of Node.js. To
+  provide access for CommonJS consumers, document a separate
+  `require('pkg/commonjs')` entry point.
+
+<!-- eslint-skip -->
+    ```js
+    // ./node_modules/pkg/package.json
+    {
+      "type": "module",
+      "main": "./index.js"
+    }
+    ```
+
+Of course, a package could also include only CommonJS or only ES module sources.
+An existing package could make a breaking change version bump to an ES
+module-only version, that would only be supported in ES module-supporting
+versions of Node.js (and other runtimes). New packages could be published
+containing only ES module sources, and would be compatible only with ES
+module-supporting runtimes.
+
+It is strongly discouraged to publish packages that use conditional exports
+to provide both transpiled and untranspiled versions of the same package, e.g.
+with:
+
+<!-- eslint-skip -->
+```js
+// ./node_modules/pkg/package.json
+{
+  "exports": {
+    ".": {
+      "require": "./index.cjs",
+      "default": "./index.mjs"
+    }
+  }
+}
+```
+
+where `require('pkg')` will get the transpiled `index.cjs` and `import 'pkg'`
+will get `index.mjs`, as this directly creates the instancing hazard described
+above. Instead, use the wrapper approach provided in (1) above.
 
 ## <code>import</code> Specifiers
 
@@ -806,6 +916,9 @@ of these top-level routines unless stated otherwise.
 
 _isMain_ is **true** when resolving the Node.js application entry point.
 
+_defaultEnv_ is the conditional environment name priority array,
+`["node", "default"]`.
+
 <details>
 <summary>Resolver algorithm specification</summary>
 
@@ -886,13 +999,13 @@ _isMain_ is **true** when resolving the Node.js application entry point.
 >    1. Throw a _Module Not Found_ error.
 > 1. If _pjson.exports_ is not **null** or **undefined**, then
 >    1. If _pjson.exports_ is a String or Array, then
->       1. Return **PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_,
->          _pjson.exports_, "")_.
+>       1. Return **PACKAGE_EXPORTS_TARGET_RESOLV**(_packageURL_,
+>          _pjson.exports_, _""_).
 >    1. If _pjson.exports is an Object, then
 >       1. If _pjson.exports_ contains a _"."_ property, then
 >          1. Let _mainExport_ be the _"."_ property in _pjson.exports_.
 >          1. Return **PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_,
->             _mainExport_, "")_.
+>             _mainExport_, _""_).
 > 1. If _pjson.main_ is a String, then
 >    1. Let _resolvedMain_ be the URL resolution of _packageURL_, "/", and
 >       _pjson.main_.
@@ -912,7 +1025,7 @@ _isMain_ is **true** when resolving the Node.js application entry point.
 >    1. If _packagePath_ is a key of _exports_, then
 >       1. Let _target_ be the value of _exports\[packagePath\]_.
 >       1. Return **PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_, _target_,
->          _""_).
+>          _""_, _defaultEnv_).
 >    1. Let _directoryKeys_ be the list of keys of _exports_ ending in
 >       _"/"_, sorted by length descending.
 >    1. For each key _directory_ in _directoryKeys_, do
@@ -921,10 +1034,10 @@ _isMain_ is **true** when resolving the Node.js application entry point.
 >          1. Let _subpath_ be the substring of _target_ starting at the index
 >             of the length of _directory_.
 >          1. Return **PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_, _target_,
->             _subpath_).
+>             _subpath_, _defaultEnv_).
 > 1. Throw a _Module Not Found_ error.
 
-**PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_, _target_, _subpath_)
+**PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_, _target_, _subpath_, _env_)
 
 > 1. If _target_ is a String, then
 >    1. If _target_ does not start with _"./"_, throw a _Module Not Found_
@@ -940,12 +1053,20 @@ _isMain_ is **true** when resolving the Node.js application entry point.
 >          _subpath_ and _resolvedTarget_.
 >       1. If _resolved_ is contained in _resolvedTarget_, then
 >          1. Return _resolved_.
+> 1. Otherwise, if _target_ is a non-null Object, then
+>    1. If _target_ has an object key matching one of the names in _env_, then
+>       1. Let _targetValue_ be the corresponding value of the first object key
+>          of _target_ in _env_.
+>       1. Let _resolved_ be the result of **PACKAGE_EXPORTS_TARGET_RESOLVE**
+>          (_packageURL_, _targetValue_, _subpath_, _env_).
+>       1. Assert: _resolved_ is a String.
+>       1. Return _resolved_.
 > 1. Otherwise, if _target_ is an Array, then
 >    1. For each item _targetValue_ in _target_, do
->       1. If _targetValue_ is not a String, continue the loop.
+>       1. If _targetValue_ is an Array, continue the loop.
 >       1. Let _resolved_ be the result of
 >          **PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_, _targetValue_,
->          _subpath_), continuing the loop on abrupt completion.
+>          _subpath_, _env_), continuing the loop on abrupt completion.
 >       1. Assert: _resolved_ is a String.
 >       1. Return _resolved_.
 > 1. Throw a _Module Not Found_ error.
@@ -1026,6 +1147,5 @@ success!
 [`module.createRequire()`]: modules.html#modules_module_createrequire_filename
 [`module.syncBuiltinESMExports()`]: modules.html#modules_module_syncbuiltinesmexports
 [dynamic instantiate hook]: #esm_dynamic_instantiate_hook
-[package exports]: #esm_package_exports
 [special scheme]: https://url.spec.whatwg.org/#special-scheme
 [the official standard format]: https://tc39.github.io/ecma262/#sec-modules
