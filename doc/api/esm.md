@@ -385,9 +385,8 @@ publishing a package that caters to both CommonJS and ES module consumers:
   wrapper is used for `import` and the CommonJS entry point for `require`,
   without introducing the hazard described above.
 
-<!-- eslint-skip -->
-    ```js
-    // ./node_modules/pkg/package.json
+    _pkg/package.json_
+    ```json
     {
       "exports": {
         ".": {
@@ -398,13 +397,13 @@ publishing a package that caters to both CommonJS and ES module consumers:
     }
     ```
 
+    _pkg/index.cjs_
     ```js
-    // ./node_modules/pkg/index.cjs
     exports.name = 'value';
     ```
 
+    _pkg/wrapper.mjs_
     ```js
-    // ./node_modules/pkg/wrapper.mjs
     import cjsModule from './index.cjs';
     export const name = cjsModule.name;
     ```
@@ -414,9 +413,8 @@ publishing a package that caters to both CommonJS and ES module consumers:
   a CommonJS file, and thus the package would remain compatible with older
   versions of Node.js that lack support for ES modules.
 
-<!-- eslint-skip -->
-    ```js
-    // ./node_modules/pkg/package.json
+    _pkg/package.json_
+    ```json
     {
       "type": "module",
       "main": "./index.cjs",
@@ -431,9 +429,8 @@ publishing a package that caters to both CommonJS and ES module consumers:
   provide access for CommonJS consumers, document a separate
   `require('pkg/commonjs')` entry point.
 
-<!-- eslint-skip -->
-    ```js
-    // ./node_modules/pkg/package.json
+    _pkg/package.json_
+    ```json
     {
       "type": "module",
       "main": "./index.js"
