@@ -444,9 +444,10 @@ versions of Node.js (and other runtimes). New packages could be published
 containing only ES module sources, and would be compatible only with ES
 module-supporting runtimes.
 
-It is strongly discouraged to publish packages that use conditional exports
-to provide both transpiled and untranspiled versions of the same package, e.g.
-with:
+It is strongly encouraged to only publish CommonJS or use a wrapper approach
+as described in (1) above instead of publishing packages that use conditional
+exports to provide both transpiled and untranspiled versions of the same
+package, e.g. with:
 
 <!-- eslint-skip -->
 ```js
@@ -462,8 +463,8 @@ with:
 ```
 
 where `require('pkg')` will get the transpiled `index.cjs` and `import 'pkg'`
-will get `index.mjs`, as this directly creates the instancing hazard described
-above. Instead, use the wrapper approach provided in (1) above.
+will get `index.mjs`. This will directly create the instancing hazard described
+where hard-to-debug singleton bugs may affect users.
 
 ## <code>import</code> Specifiers
 
