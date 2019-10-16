@@ -306,7 +306,7 @@ ECMAScript modules and versions that don't, for example:
 {
   "main": "./main-legacy.cjs",
   "exports": {
-    ".": "./main-modern.mjs"
+    ".": "./main-modern.cjs"
   }
 }
 ```
