@@ -930,7 +930,7 @@ Maybe<URL> ResolveExportsTarget(Environment* env,
         CHECK(resolved.IsNothing());
       }
       return Nothing<URL>();
-  } else if (target->IsObject() && !target->IsNull()) {
+  } else if (target->IsObject()) {
     Local<Object> target_obj = target.As<Object>();
     bool matched = false;
     Local<Value> conditionalTarget;
