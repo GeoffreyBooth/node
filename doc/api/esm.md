@@ -388,10 +388,9 @@ The conditions supported in Node.js are matched in the following order:
    file.
 
 Using the `"require"` condition it is possible to define a package that will
-have a different exported value for CommonJS and ES modules, which is a hazard
-in that it can result in having two separate instances of the same package in
-use in an application, which can cause a number of bugs. For a safe way to
-define packages for use via both `require()` and `import`, see the next section.
+have a different exported value for CommonJS and ES modules, which can be a
+hazard in that it can result in having two separate instances of the same
+package in use in an application, which can cause a number of bugs.
 
 Other conditions such as `"browser"`, `"electron"`, `"deno"`, `"react-native"`
 etc. can be defined in other runtimes or tools.
