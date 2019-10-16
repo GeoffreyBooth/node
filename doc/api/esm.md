@@ -219,10 +219,46 @@ The `"main"` field can point to exactly one file, regardless of whether the
 package is referenced via `require` (in a CommonJS context) or `import` (in an
 ES module context).
 
-To define a different package entry point for CommonJS and ES Module
-environments, see the
-(section on creating dual CommonJS / ES module packages)
-[#esm_publishing_dual_commonjs_es_module_slash_commonjs_packages].
+#### Compatibility with CommonJS-Only Versions of Node.js
+
+Prior to the introduction of support for ES modules in Node.js, it was a common
+pattern for package authors to include both CommonJS and ES module JavaScript
+sources in their package, with `package.json` `"main"` specifying the CommonJS
+entry point and `package.json` `"module"` specifying the ES module entry point.
+This enabled Node.js to run the CommonJS entry point while build tools such as
+bundlers used the ES module entry point, since Node.js ignored (and still
+ignores) `"module"`.
+
+Node.js can now run ES module entry points, but it remains impossible for a
+package to define separate CommonJS and ES module entry points. This is for good
+reason: the `pkg` variable created from `import pkg from 'pkg'` is not the same
+singleton as the `pkg` variable created from `const pkg = require('pkg')`, so if
+both are referenced within the same app (including dependencies), unexpected
+behavior might occur.
+
+There are two general approaches to addressing this limitation while still
+publishing a package that contains both CommonJS and ES module sources:
+
+1. Document a new ES module entry point that’s not the package `"main"`, e.g.
+   `import pkg from 'pkg/module.mjs'` (or `import 'pkg/esm'`, if using [package
+   exports][]). The package `"main"` would still point to a CommonJS file, and
+   thus the package would remain compatible with older versions of Node.js that
+   lack support for ES modules.
+
+1. Switch the package `"main"` entry point to an ES module file as part of a
+   breaking change version bump. This version and above would only be usable on
+   ES module-supporting versions of Node.js. If the package still contains a
+   CommonJS version, it would be accessible via a path within the package, e.g.
+   `require('pkg/commonjs')`; this is essentially the inverse of the previous
+   approach. Package consumers who are using CommonJS-only versions of Node.js
+   would need to update their code from `require('pkg')` to e.g.
+   `require('pkg/commonjs')`.
+
+Of course, a package could also include only CommonJS or only ES module sources.
+An existing package could make a semver major bump to an ES module-only version,
+that would only be supported in ES module-supporting versions of Node.js (and
+other runtimes). New packages could be published containing only ES module
+sources, and would be compatible only with ES module-supporting runtimes.
 
 ### Package Exports
 
@@ -359,112 +395,6 @@ define packages for use via both `require()` and `import`, see the next section.
 
 Other conditions such as `"browser"`, `"electron"`, `"deno"`, `"react-native"`
 etc. can be defined in other runtimes or tools.
-
-#### Publishing Dual CommonJS / ES Module Packages
-
-Prior to the introduction of support for ES modules in Node.js, it was a common
-pattern for package authors to include both CommonJS and ES module JavaScript
-sources in their package, with `package.json` `"main"` specifying the CommonJS
-entry point and `package.json` `"module"` specifying the ES module entry point.
-This enabled Node.js to run the CommonJS entry point while build tools such as
-bundlers used the ES module entry point, since Node.js ignored (and still
-ignores) `"module"`.
-
-In addition, there is a hazard in doing this in that the `pkg` variable created
-from `import pkg from 'pkg'` is not the same singleton as the `pkg` variable
-created from `const pkg = require('pkg')`, so if both are referenced within the
-same app (including dependencies), unexpected behavior might occur.
-
-There are three general approaches to addressing this limitation while still
-publishing a package that caters to both CommonJS and ES module consumers:
-
-1. Write the package in CommonJS or transpile the package into CommonJS, and
-  create an ES module wrapper file to provide support for named exports (for
-  example `import { name } from 'pkg'` instead of
-  `import pkg from 'pkg'; pkg.name`). Using conditional exports, the ES module
-  wrapper is used for `import` and the CommonJS entry point for `require`,
-  without introducing the hazard described above.
-
-    _pkg/package.json_
-    ```json
-    {
-      "exports": {
-        ".": {
-          "require": "./index.cjs",
-          "default": "./wrapper.mjs"
-        }
-      }
-    }
-    ```
-
-    _pkg/index.cjs_
-    ```js
-    exports.name = 'value';
-    ```
-
-    _pkg/wrapper.mjs_
-    ```js
-    import cjsModule from './index.cjs';
-    export const name = cjsModule.name;
-    ```
-
-1. Document a new ES module entry point that’s not the package `"main"`, e.g.
-  `import pkg from 'pkg/module'`. The package `"main"` would still point to
-  a CommonJS file, and thus the package would remain compatible with older
-  versions of Node.js that lack support for ES modules.
-
-    _pkg/package.json_
-    ```json
-    {
-      "type": "module",
-      "main": "./index.cjs",
-      "exports": {
-        "./module": "./index.js"
-      }
-    }
-    ```
-
-1. Set the package `"main"` entry point to an ES module file. This version and
-  above would only be usable in ES module-supporting versions of Node.js. To
-  provide access for CommonJS consumers, document a separate
-  `require('pkg/commonjs')` entry point.
-
-    _pkg/package.json_
-    ```json
-    {
-      "type": "module",
-      "main": "./index.js"
-    }
-    ```
-
-Of course, a package could also include only CommonJS or only ES module sources.
-An existing package could make a breaking change version bump to an ES
-module-only version, that would only be supported in ES module-supporting
-versions of Node.js (and other runtimes). New packages could be published
-containing only ES module sources, and would be compatible only with ES
-module-supporting runtimes.
-
-It is strongly encouraged to only publish CommonJS or use a wrapper approach
-as described in (1) above instead of publishing packages that use conditional
-exports to provide both transpiled and untranspiled versions of the same
-package, e.g. with:
-
-<!-- eslint-skip -->
-```js
-// ./node_modules/pkg/package.json
-{
-  "exports": {
-    ".": {
-      "require": "./index.cjs",
-      "default": "./index.mjs"
-    }
-  }
-}
-```
-
-where `require('pkg')` will get the transpiled `index.cjs` and `import 'pkg'`
-will get `index.mjs`. This will directly create the instancing hazard described
-where hard-to-debug singleton bugs may affect users.
 
 ## <code>import</code> Specifiers
 
