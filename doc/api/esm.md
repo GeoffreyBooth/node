@@ -380,20 +380,20 @@ being used. Browser tooling with support for exports can then resolve the
 
 The conditions supported in Node.js are matched in the following order:
 
-1. `"require"` - matched when the package is imported via CommonJS `require()`.
+1. `"module"` - matched when the package is imported as an ES module.
 2. `"node"` - matched for any Node.js environment. Can be a CommonJS or ES
    module file.
 3. `"default"` - the generic fallback that will always match if no other
    more specific condition is matched first. Can be a CommonJS or ES module
    file.
 
-Using the `"require"` condition it is possible to define a package that will
+Using the `"module"` condition it is possible to define a package that will
 have a different exported value for CommonJS and ES modules, which can be a
 hazard in that it can result in having two separate instances of the same
 package in use in an application, which can cause a number of bugs.
 
 Other conditions such as `"browser"`, `"electron"`, `"deno"`, `"react-native"`
-etc. can be defined in other runtimes or tools.
+etc. could be defined in other runtimes or tools.
 
 ## <code>import</code> Specifiers
 
@@ -844,7 +844,7 @@ of these top-level routines unless stated otherwise.
 _isMain_ is **true** when resolving the Node.js application entry point.
 
 _defaultEnv_ is the conditional environment name priority array,
-`["node", "default"]`.
+`["module", "node", "default"]`.
 
 <details>
 <summary>Resolver algorithm specification</summary>
