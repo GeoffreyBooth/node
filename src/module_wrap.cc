@@ -820,9 +820,8 @@ void ThrowExportsInvalid(Environment* env,
         ", imported from " + base.ToFilePath();
     node::THROW_ERR_MODULE_NOT_FOUND(env, msg.c_str());
   } else {
-    const std::string msg = "Cannot resolve package default main '" + target +
-        "' in " + pjson_url.ToFilePath() + ", imported from " +
-        base.ToFilePath();
+    const std::string msg = "Cannot resolve package main '" + target + "' in" +
+        pjson_url.ToFilePath() + ", imported from " + base.ToFilePath();
     node::THROW_ERR_MODULE_NOT_FOUND(env, msg.c_str());
   }
 }
@@ -977,6 +976,21 @@ Maybe<URL> ResolveExportsTarget(Environment* env,
   return Nothing<URL>();
 }
 
+bool FirstKeyStartsWithDot(Environment* env, Local<Value> exports) {
+  CHECK(exports->IsObject());
+  Local<Context> context = env->context();
+  Local<Object> exports_obj = exports.As<Object>();
+  Local<Array> keys =
+      exports_obj->GetOwnPropertyNames(context).ToLocalChecked();
+  if (keys->Length() > 0) {
+    Local<String> key = keys->Get(context, 0).ToLocalChecked().As<String>();
+    Utf8Value key_utf8(env->isolate(), key);
+    std::string key_str(*key_utf8, key_utf8.length());
+    return key_str.front() == '.';
+  }
+  return false;
+}
+
 Maybe<URL> PackageMainResolve(Environment* env,
                               const URL& pjson_url,
                               const PackageConfig& pcfg,
@@ -988,7 +1002,7 @@ Maybe<URL> PackageMainResolve(Environment* env,
       Local<Value> exports = pcfg.exports.Get(isolate);
       if (exports->IsString() || exports->IsObject()) {
         Local<Value> target;
-        if (!exports->IsObject()) {
+        if (!exports->IsObject() || !FirstKeyStartsWithDot(env, exports)) {
           target = exports;
         } else {
           Local<Object> exports_obj = exports.As<Object>();
@@ -1036,7 +1050,7 @@ Maybe<URL> PackageExportsResolve(Environment* env,
   Isolate* isolate = env->isolate();
   Local<Context> context = env->context();
   Local<Value> exports = pcfg.exports.Get(isolate);
-  if (!exports->IsObject()) {
+  if (!exports->IsObject() || !FirstKeyStartsWithDot(env, exports)) {
     ThrowExportsNotFound(env, pkg_subpath, pjson_url, base);
     return Nothing<URL>();
   }

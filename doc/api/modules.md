@@ -223,7 +223,8 @@ RESOLVE_BARE_SPECIFIER(DIR, X)
 2. If X matches this pattern and DIR/name/package.json is a file:
    a. Parse DIR/name/package.json, and look for "exports" field.
    b. If "exports" is null or undefined, GOTO 3.
-   c. If "exports" is a string, treat it as having that "." object property.
+   c. If "exports" is a string, or object whose first key does not start with
+      ".", treat it as having that value as its "." object property.
    d. Find the longest key in "exports" that the subpath starts with.
    e. If no such key can be found, throw "not found".
    f. let RESOLVED_URL =

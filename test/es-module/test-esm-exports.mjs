@@ -24,6 +24,9 @@ import { requireFixture, importFixture } from '../fixtures/pkgexports.mjs';
     ['pkgexports', { default: 'asdf' }],
     // Conditional split for require
     ['pkgexports/condition', isRequire ? { default: 'encoded path' } :
+      { default: 'asdf' }],
+    // Conditional sugar for exports
+    ['pkgexports-direct', isRequire ? { default: 'encoded path' } :
       { default: 'asdf' }]
   ]);
 

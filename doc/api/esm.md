@@ -925,8 +925,9 @@ _defaultEnv_ is the conditional environment name priority array,
 > 1. If _pjson_ is **null**, then
 >    1. Throw a _Module Not Found_ error.
 > 1. If _pjson.exports_ is not **null** or **undefined**, then
->    1. If _pjson.exports_ is a String or Array, then
->       1. Return **PACKAGE_EXPORTS_TARGET_RESOLV**(_packageURL_,
+>    1. If _pjson.exports_ is a String or Array, or an Object whose first key
+>       does not start with _"."_, then
+>       1. Return **PACKAGE_EXPORTS_TARGET_RESOLVE**(_packageURL_,
 >          _pjson.exports_, _""_).
 >    1. If _pjson.exports is an Object, then
 >       1. If _pjson.exports_ contains a _"."_ property, then
