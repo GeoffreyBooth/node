@@ -357,7 +357,7 @@ package in use in an application, which can cause a number of bugs.
 Other conditions such as `"browser"`, `"electron"`, `"deno"`, `"react-native"`
 etc. could be defined in other runtimes or tools.
 
-### Dual CommonJS/ES Module Packages and the Divergent Specifier Hazard
+### Dual CommonJS/ES Module Packages
 
 Prior to the introduction of support for ES modules in Node.js, it was a common
 pattern for package authors to include both CommonJS and ES module JavaScript
@@ -372,12 +372,13 @@ is possible to define separate package entry points for CommonJS and ES module
 consumers. Unlike in the scenario where `"module"` is only used by bundlers, or
 ES module files are transpiled into CommonJS on the fly before evaluation by
 Node.js, the files referenced by the ES module entry point are evaluated as ES
-modules. When a specifier such as `'pkg'` resolves to different files when
-referenced via `require` and `import`, there is a risk of certain bugs that only
-occur under these conditions. This risk is the divergent specifier hazard, and
-it is only possible when a package entry point or exported path is defined via
-[conditional exports][] to point to different files for CommonJS and ES module
-consumers. For example:
+modules.
+
+#### Hazards
+
+When a specifier such as `'pkg'` resolves to different files when referenced via
+`require` and `import`, there is a risk of certain bugs that only occur under
+these conditions. For example:
 
 <!-- eslint-skip -->
 ```js
@@ -398,25 +399,12 @@ In this example, `require('pkg')` always resolves to `pkg.cjs`, including in
 versions of Node.js where ES modules are unsupported. In Node.js where ES
 modules are supported, `import 'pkg'` references `pkg.mjs`.
 
-The hazard is that the `pkg` created by `const pkg = require('pkg')` is not the
-same as the `pkg` created by `import pkg from 'pkg'`. An `instanceof` comparison
-of the two returns `false`, and properties added to one (like `pkg.foo = 3`) are
-not present on the other. This differs from how `import` and `require`
-statements work in all-CommonJS or all-ES module environments, respectively, and
-therefore is surprising to users.
-
-Essentially, the `pkg` in each environment is a separate _singleton._ Whereas in
-one ES module file you can have `import a from 'pkg'` and in another you can
-write `import b from 'pkg'` and `a instanceof b` returns `true`, that would not
-be the case for `const b = require('pkg')`.
-
-The ES module syntax that users have been writing for use in Node.js via Babel
-or [`esm`](https://github.com/standard-things/esm#readme) for the last several
-years does not behave this way, because Babel or `esm` have been transpiling
-everything into CommonJS before evaluation. In the previous example, `import a
-from 'pkg'` would be converted into `const a = require('pkg')` and then `a
-instanceof b` (where `b` comes from `const b = require('pkg')`) would return
-`true`.
+The potential for bugs comes from the fact that the `pkg` created by `const pkg
+= require('pkg')` is not the same as the `pkg` created by `import pkg from
+'pkg'`. This is the “divergent specifier hazard,” where one specifer (`'pkg'`)
+resolves to separate files (`pkg.cjs` and `pkg.mjs`) in separate module systems,
+yet both versions might get loaded within an application because Node.js
+supports intermixing CommonJS and ES modules.
 
 Looked at another way, `import pkg from 'pkg'` is a shorthand for `import pkg
 from './node_modules/pkg/pkg.mjs'` and `const pkg = require('pkg')` is a
@@ -424,109 +412,163 @@ shorthand for `const pkg = require('./node_modules/pkg/pkg.cjs')`. Because the
 file paths in the two statements are different, the two `pkg` singletons are
 different.
 
+An `instanceof` comparison of the two returns `false`, and properties added to
+one (like `pkg.foo = 3`) are not present on the other. One ES module file can
+have `import a from 'pkg'` and another can have `import b from 'pkg'`, and `a
+instanceof b` returns `true`. That would not be the case when comparing the `a`
+from `import a from 'pkg'` with the `b` from `const b = require('pkg')`. This
+differs from how `import` and `require` statements work in all-CommonJS or
+all-ES module environments, respectively, and therefore is surprising to users.
+It also differs from the behavior users have grown familiar with over the last
+several years when using transpilation via tools like Babel or
+[`esm`][].
+
 It’s not enough to refer to `'pkg'` using only `require` or only `import` within
 an application; all of that application’s dependencies also need to use the same
-method or the hazard is present. For example, if an application uses `pkg` and
-`pkg-plugin`, and the application references `pkg` via `import` and `pkg-plugin`
-references `pkg` via `require`, both versions of `pkg` are therefore loaded.
+method or the hazard is still present. For example, if an application uses `pkg`
+and `pkg-plugin`, and the application references `pkg` via `import` and
+`pkg-plugin` references `pkg` via `require`, both versions of `pkg` are
+therefore loaded.
 
-#### Preventing the Divergent Specifier Hazard
+#### Writing Dual Packages While Avoiding or Minimizing Hazards
 
-To avoid the bugs that can occur when the divergent specifier hazard is present,
-one approach is to simply prevent the conditions under which the hazard can
-occur. This can be achieved in the following ways:
+First, the hazard described in the previous section only occurs when a package
+contains both CommonJS and ES module sources and both sources are provided for
+use in Node.js, either via separate main entry points or exported paths. A
+package could instead be written where any version of Node.js receives only
+CommonJS sources, and any separate ES module sources the package may contain
+could be intended only for other environments such as browsers. Such a package
+would be usable by any version of Node.js, since `import` can refer to CommonJS
+files.
 
-1. Publish a package that doesn’t use [conditional exports][]; the package entry
-   point and all exported paths would not resolve differently based on whether
-   they’re referenced via `require` or `import`. This would therefore mean that
-   if the export is CommonJS, it would lack the benefits of ES module syntax
-   such as the ability to potentially run unmodified in browser environments;
-   and if the export is an ES module, it would not be able to run in older
-   versions of Node.js that lack support for ES module syntax.
+A disadvantage of such an approach is that the package would not provide named
+exports for `import`, which means that instead of `import { name } from 'pkg'`
+users would need to write `import pkg from 'pkg'; pkg.name`.
 
-1. Define separate exported paths for separate environments, for example:
+A package could also switch from CommonJS to ES module syntax in a breaking
+change version bump. This has the obvious disadvantage that the newest version
+of the package would only be usable in ES module-supporting versions of Node.js.
 
-    ```json
-    {
-      "type": "module",
-      "main": "./pkg.cjs",
-      "exports": {
-        ".": "./pkg.cjs",
-        "./module": "./pkg.mjs"
-      }
+Every pattern has tradeoffs, but there are two broad approaches that satisfy the
+following conditions:
+
+1. The package is usable via both `require` and `import`.
+1. The package is usable in both current Node.js and older versions of Node.js
+   that lack support for ES modules.
+1. The package main entry point, e.g. `'pkg'` can be used by both `require` to
+   resolve to a CommonJS file and by `import` to resolve to an ES module file.
+   (And likewise for exported paths, e.g. `'pkg/feature'`.)
+1. The package provides named exports, e.g. `import { name } from 'pkg'`.
+1. The package is potentially usable in other ES module environments such as
+   browsers.
+1. The hazards described in the previous section are avoided or minimized.
+
+##### Approach #1: Use an ES Module Wrapper
+
+Write the package in CommonJS or transpile ES module sources into CommonJS, and
+create an ES module wrapper file that defines the named exports. Using
+conditional exports, the ES module wrapper is used for `import` and the CommonJS
+entry point for `require`. A separate export provides ES module sources for
+users who know they don’t need to worry about CommonJS version of the package
+being used elsewhere in the application, such as by dependencies.
+
+<!-- eslint-skip -->
+```js
+// ./node_modules/pkg/package.json
+{
+  "type": "module",
+  "main": "./index.cjs",
+  "exports": {
+    ".": {
+      "module": "./wrapper.mjs",
+      "node": "./index.cjs"
+    },
+    "./module": "./index.mjs"
+  }
+}
+```
+
+```js
+// ./node_modules/pkg/index.cjs
+exports.name = 'value';
+```
+
+```js
+// ./node_modules/pkg/wrapper.mjs
+import cjsModule from './index.cjs';
+export const name = cjsModule.name;
+```
+
+```js
+// ./node_modules/pkg/index.mjs
+export const name = 'value';
+```
+
+In this example, the `name` from `import { name } from 'pkg'` is the same
+singleton as the `name` from `const { name } = require('pkg')`. Therefore
+`instanceof` returns `true` when comparing the two `name`s and the divergent
+specifier hazard is avoided.
+
+This approach is appropriate for any of the following use cases:
+* The package is currently written in CommonJS and the author would prefer not
+  to refactor it into ES module syntax, but wishes to provide named exports for
+  ES module consumers.
+* The package has other packages that depend on it, and the end user might
+  install both this package and those other packages. For example a `utilities`
+  package is used directly in an application, and a `utilities-plus` package
+  adds a few more functions to `utilities`. Because the wrapper exports
+  underlying CommonJS files, it doesn’t matter if `utilities-plus` is written in
+  CommonJS or ES module syntax; it will work either way.
+* The package stores internal state, and the package author would prefer not to
+  refactor the package to isolate its state management. See the next section.
+
+If the user is certain that the CommonJS version will not be loaded anywhere in
+the application, such as by dependencies; or if the CommonJS version can be
+loaded but doesn’t affect the ES module version (for example, because the
+package is stateless); then the user could instead use `import { name } from
+'pkg/module'` to load the ES module version directly as opposed to the wrapped
+CommonJS version.
+
+##### Approach #2: Isolate State
+
+The most straightforward `package.json` would be one that defines the separate
+CommonJS and ES module entry points directly:
+
+<!-- eslint-skip -->
+```js
+// ./node_modules/pkg/package.json
+{
+  "type": "module",
+  "main": "./index.cjs",
+  "exports": {
+    ".": {
+      "module": "./index.mjs",
+      "node": "./index.cjs"
     }
-    ```
+  }
+}
+```
 
-   In this example, the package `"main"` would point to a CommonJS file, and
-   thus the package would remain compatible with older versions of Node.js that
-   lack support for ES modules; but the ES module version of the package is
-   available for supported environments via `'pkg/module'`. Users would need to
-   refer to the package’s documentation (or the `package.json "module"` field,
-   if the package supports bundlers) to know to use `'pkg/module'` with
-   `import`; using `'pkg'` with `import` would cause the CommonJS version to be
-   loaded.
+This can be done if both the CommonJS and ES module versions of the package are
+equivalent, for example because one is the transpiled output of the other; and
+the package’s management of state is carefully isolated (or the package is
+stateless).
 
-1. Change the package `"main"` entry point to point to an ES module file as part
-   of a breaking change version bump. This version and above would only be
-   usable on ES module-supporting versions of Node.js. If the package still
-   contains a CommonJS version, it would be accessible via a path within the
-   package, e.g. `require('pkg/commonjs')`; this is essentially the inverse of
-   the previous approach. Package consumers who are using CommonJS-only versions
-   of Node.js would need to update their code from `require('pkg')` to e.g.
-   `require('pkg/commonjs')`.
+The reason that state is an issue is because both the CommonJS and ES module
+versions of the package may get used within an application; for example, the
+user’s application code could `import` the ES module version while a dependency
+`require`s the CommonJS version. If that were to occur, two copies of the
+package would be loaded in memory and therefore two separate states would be
+present. This would likely cause hard-to-troubleshoot bugs.
 
-#### Avoiding Bugs Caused by the Divergent Specifier Hazard
+Aside from writing a stateless package (if JavaScript’s `Math` were a package,
+for example, it would be stateless as all of its methods are static), there are
+three ways to isolate state so that it’s shared between the potentially loaded
+CommonJS and ES module instances of the package:
 
-Package authors may wish to make available at the same specifier both the
-CommonJS and ES module versions of a dual CommonJS/ES module package. This would
-allow consumers to `require('pkg')` and `import 'pkg'` and receive the CommonJS
-and ES module versions, respectively. When authoring a package that provides
-this, care must be taken to avoid the bugs which may occur due to the divergent
-specifier hazard.
-
-1. Write the package in CommonJS or transpile the package into CommonJS, and
-   create an ES module wrapper file to provide support for named exports (for
-   example `import { name } from 'pkg'` instead of `import pkg from 'pkg';
-   pkg.name`). Using conditional exports, the ES module wrapper is used for
-   `import` and the CommonJS entry point for `require`.
-
-    _pkg/package.json_
-    ```json
-    {
-      "exports": {
-        ".": {
-          "module": "./wrapper.mjs",
-          "node": "./index.cjs"
-        }
-      }
-    }
-    ```
-
-    _pkg/index.cjs_
-    ```js
-    exports.name = 'value';
-    ```
-
-    _pkg/wrapper.mjs_
-    ```js
-    import cjsModule from './index.cjs';
-    export const name = cjsModule.name;
-    ```
-
-   In this example, the `name` from `import { name } from 'pkg'` is the same
-   singleton as the `name` from `const { name } = require('pkg')`. Therefore
-   `instanceof` returns `true` when comparing the two `name`s and the hazard is
-   avoided. This wrapper approach, however, means that mostly CommonJS files are
-   loaded for the package, even in Node.js ES module environments; and a
-   separate version of the package would need to be created for environments
-   such as browsers that don’t support CommonJS.
-
-1. If possible, write a package that is stateless or stores its state outside of
-   the package. A package that is entirely static methods, for example, is
-   stateless; if JavaScript’s `Math` were a package, it would be stateless as
-   all of its methods (`max`, etc.) are static. JavaScript’s `Date` needs to be
-   instantiated to contain state; if it were a package, it would be used like
-   this:
+1. If possible, contain all state within an instantiated object. JavaScript’s
+   `Date`, for example, needs to be instantiated to contain state; if it were a
+   package, it would be used like this:
 
     ```js
     import date from 'date';
@@ -544,27 +586,25 @@ specifier hazard.
    package’s function can also return a new object, or modify a passed-in
    object, to keep the state external to the package.
 
-1. Write a package where the state is isolated in one or more CommonJS files
-   that are shared between the CommonJS and ES module versions of the package.
-   This is essentially a combination of the previous two approaches. For
-   example, if the CommonJS and ES module entry points are `index.cjs` and
-   `index.mjs`, respectively:
+1. Isolate the state in one or more CommonJS files that are shared between the
+   CommonJS and ES module versions of the package. For example, if the CommonJS
+   and ES module entry points are `index.cjs` and `index.mjs`, respectively:
 
-    _pkg/state.cjs_
     ```js
+    // ./node_modules/pkg/state.cjs
     module.exports = {
       cache: []
     };
     ```
 
-    _pkg/index.cjs_
     ```js
+    // ./node_modules/pkg/index.cjs
     const state = require('./state.cjs');
     module.exports.state = state;
     ```
 
-    _pkg/index.mjs_
     ```js
+    // ./node_modules/pkg/index.mjs
     export * as state from './state.cjs';
     ```
 
@@ -582,14 +622,14 @@ specifier hazard.
    `globalThis[Symbol.for('pkg@1.2.3')]`. For example, if the CommonJS and ES
    module entry points are `index.cjs` and `index.mjs`, respectively:
 
-    _pkg/index.cjs_
     ```js
+    // ./node_modules/pkg/index.cjs
     const state = globalThis[Symbol.for('pkg@1.2.3')];
     module.exports.state = state;
     ```
 
-    _pkg/index.mjs_
     ```js
+    // ./node_modules/pkg/index.mjs
     export const state = globalThis[Symbol.for('pkg@1.2.3')];
     ```
 
@@ -601,11 +641,12 @@ specifier hazard.
    This has the disadvantage of polluting the global namespace, but it is
    compatible with non-CommonJS environments such as browsers.
 
-For all approaches other than the first, an `instanceof` comparison would return
-`false` when comparing the CommonJS and ES module versions of such packages, or
-objects instantiated from each version; end users of such packages need to be
-aware of this and avoid comparing identity in mixed-module system environments,
-or check against both versions:
+For packages using this approach, regardless of which state management pattern
+is chosen, an `instanceof` comparison would return `false` when comparing the
+CommonJS and ES module versions of the package or of objects instantiated from
+each version. End users of such packages need to be aware of this and avoid
+comparing identity in mixed-module system environments, or check against both
+versions:
 
 ```js
 import { createRequire } from 'module';
@@ -619,6 +660,18 @@ export const instanceofPkg = (instantiatedPkg) => {
          instantiatedPkg instanceof pkgCommonJs;
 };
 ```
+
+Any plugins that attach to the package’s singleton likewise would need to
+separately attach to both the CommonJS and ES module singletons.
+
+This approach is appropriate for any of the following use cases:
+* The package is currently written in ES module syntax and the package author
+  wants that version to be used wherever such syntax is supported.
+* The package is stateless or its state can be isolated without too much
+  difficulty.
+* The package is unlikely to have other public packages that depend on it, or if
+  it does, the package is stateless or has state that need not be shared between
+  dependencies or with the overall application.
 
 ## <code>import</code> Specifiers
 
@@ -1293,6 +1346,7 @@ success!
 [Terminology]: #esm_terminology
 [WHATWG JSON modules specification]: https://html.spec.whatwg.org/#creating-a-json-module-script
 [`data:` URLs]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs
+[`esm`]: https://github.com/standard-things/esm#readme
 [`export`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/export
 [`import()`]: #esm_import-expressions
 [`import.meta.url`]: #esm_import_meta
