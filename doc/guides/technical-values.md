@@ -9,7 +9,7 @@ collaboration.
 * Priority 2 - Stability
 * Priority 3 - Operational qualities
 * Priority 4 - Node.js maintainer experience
-* Priority 5 - Up to date Technology and APIs
+* Priority 5 - Up to date technology and APIs
 
 ## Value descriptions
 
@@ -20,6 +20,8 @@ with Node.js. Some key elements of this include:
 * Great documentation
 * Bundling friction-reducing APIs and components, even though
   they could be provided externally
+* Maximizing compatibility and interoperability with browsers and other
+  JavaScript environments
 * Enabling/supporting external packages to ensure overall developer experience
 
 ### 2 - Stability
