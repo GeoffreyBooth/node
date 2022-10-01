@@ -1,10 +1,11 @@
-import { createHook } from 'async_hooks';
+import async_hooks from 'async_hooks';
 
+// process._rawDebug('asyncHooks', async_hooks.executionAsyncId(), async_hooks.triggerAsyncId());
 
 const resources = new Map();
 
 // Only init to start context-based promise hook
-createHook({
+async_hooks.createHook({
   init(asyncId, type, triggerAsyncId, resource) {
     resources.set(asyncId, {
       asyncId,
@@ -35,14 +36,17 @@ createHook({
 }).enable();
 
 
-console.log('async resources that are pending when user code begins running:')
+process._rawDebug('async resources that are pending when user code begins running:')
 const pendingAsyncIds = new Set()
 resources.forEach(resource => {
   const { triggerAsyncId } = resource
   if (!pendingAsyncIds.has(triggerAsyncId)) {
     pendingAsyncIds.add(triggerAsyncId)
-    console.log(globalThis.debugAsyncHooks.get(triggerAsyncId))
+    process._rawDebug(globalThis.debugAsyncHooks.get(triggerAsyncId))
   }
 })
 
-console.log(`\nwe want to find the line of code that creates the following async resources: ${Array.from(pendingAsyncIds).join(', ')}`)
+process._rawDebug(`\nwe want to find the line of code that creates the following async resources: ${Array.from(pendingAsyncIds).join(', ')}`)
+
+
+process._rawDebug([...debugAsyncHooks].filter(resource => resource.tagged))
