@@ -599,7 +599,12 @@ added:
 
 > Stability: 1.0 - Early development
 
-Define which module system, `module` or `commonjs`, to use for the following:
+The `type` value can be one of the following: `commonjs`, `module`,
+`detect-module`. The current default value is `commonjs`.
+
+Use `--experimental-default-type=module` or
+`--experimental-default-type=commonjs` to define which module system, `module`
+or `commonjs`, to use for the following:
 
 * String input provided via `--eval` or STDIN, if `--input-type` is unspecified.
 
@@ -619,6 +624,13 @@ Under `--experimental-default-type=module` and `--experimental-wasm-modules`,
 files with no extension will be treated as WebAssembly if they begin with the
 WebAssembly magic number (`\0asm`); otherwise they will be treated as ES module
 JavaScript.
+
+Specifying `--experimental-default-type=detect-module` will cause Node.js to
+parse the main entry point file or string and look for any of the following
+within: `import` statements (not `import()` expressions), `export` statements,
+or `import.meta`. If any of these are found, the process will run as if
+`--experimental-default-type=module` was passed. Otherwise, the process will run
+as if `--experimental-default-type=commonjs` was passed.
 
 ### `--experimental-import-meta-resolve`
 
