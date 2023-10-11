@@ -318,6 +318,7 @@ void ContextifyContext::CreatePerIsolateProperties(
   SetMethod(isolate, target, "makeContext", MakeContext);
   SetMethod(isolate, target, "isContext", IsContext);
   SetMethod(isolate, target, "compileFunction", CompileFunction);
+  SetMethod(isolate, target, "containsModuleSyntax", ContainsModuleSyntax);
 }
 
 void ContextifyContext::RegisterExternalReferences(
@@ -325,6 +326,7 @@ void ContextifyContext::RegisterExternalReferences(
   registry->Register(MakeContext);
   registry->Register(IsContext);
   registry->Register(CompileFunction);
+  registry->Register(ContainsModuleSyntax);
   registry->Register(PropertyGetterCallback);
   registry->Register(PropertySetterCallback);
   registry->Register(PropertyDescriptorCallback);
@@ -1132,6 +1134,11 @@ bool ContextifyScript::EvalMachine(Local<Context> context,
   return true;
 }
 
+bool ContextifyScript::ContainsModuleSyntax(v8::Local<v8::String> filename,
+                                            v8::Local<v8::String> content) {
+  return false;
+}
+
 ContextifyScript::ContextifyScript(Environment* env, Local<Object> object)
     : BaseObject(env, object) {
   MakeWeak();
@@ -1307,6 +1314,65 @@ void ContextifyContext::CompileFunction(
   }
 
   args.GetReturnValue().Set(result);
+}
+
+constexpr std::array<std::string_view, 5> commonjs_wrapper_variables = {
+    "exports",
+    "require",
+    "module",
+    "__filename",
+    "__dirname"};
+
+constexpr std::array<std::string_view, 3> esm_syntax_error_messages = {
+    "Cannot use import statement outside a module",
+    "Unexpected token 'export'",
+    "Cannot use 'import.meta' outside a module"};
+
+bool ContextifyContext::ContainsModuleSyntax(
+    const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
+
+  // Argument 1: source code
+  CHECK(args[0]->IsString());
+  Local<String> code = args[0].As<String>();
+
+  // Argument 2: filename
+  CHECK(args[1]->IsString());
+  Local<String> filename = args[1].As<String>();
+
+  Local<Context> context = env->context();
+  TryCatchScope try_catch(env);
+  Context::Scope scope(context);
+
+  Local<Array> compileFunctionParameters = {
+    &code,
+    &filename,
+    0, // line_offset,
+    0, // column_offset,
+    nullptr, // cached data
+    true, // produce cached data
+    nullptr, // parsing context
+    nullptr, // context extensions
+    commonjs_wrapper_variables}; // params
+
+  MaybeLocal<Function> maybe_fn = ContextifyContext::CompileFunction(
+    compileFunctionParameters);
+
+  Local<Function> fn;
+  if (!maybe_fn.ToLocal(&fn)) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      Utf8Value message_value(env->isolate(), try_catch.Message()->Get());
+      auto message = message_value.ToStringView();
+
+      for (const auto& error_message : esm_syntax_error_messages) {
+        if (message.find(error_message) != std::string_view::npos) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 static void StartSigintWatchdog(const FunctionCallbackInfo<Value>& args) {

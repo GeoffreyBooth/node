@@ -83,6 +83,8 @@ class ContextifyContext : public BaseObject {
   static void IsContext(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void CompileFunction(
       const v8::FunctionCallbackInfo<v8::Value>& args);
+  static bool ContainsModuleSyntax(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WeakCallback(
       const v8::WeakCallbackInfo<ContextifyContext>& data);
   static void PropertyGetterCallback(
