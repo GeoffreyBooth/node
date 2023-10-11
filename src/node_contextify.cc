@@ -1134,11 +1134,6 @@ bool ContextifyScript::EvalMachine(Local<Context> context,
   return true;
 }
 
-bool ContextifyScript::ContainsModuleSyntax(v8::Local<v8::String> filename,
-                                            v8::Local<v8::String> content) {
-  return false;
-}
-
 ContextifyScript::ContextifyScript(Environment* env, Local<Object> object)
     : BaseObject(env, object) {
   MakeWeak();
@@ -1149,7 +1144,6 @@ ContextifyScript::~ContextifyScript() {}
 void ContextifyContext::CompileFunction(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-  Isolate* isolate = env->isolate();
   Local<Context> context = env->context();
 
   // Argument 1: source code
@@ -1206,6 +1200,75 @@ void ContextifyContext::CompileFunction(
     params_buf = args[8].As<Array>();
   }
 
+  auto maybe_fn = ContextifyContext::DoCompileFunction(
+      env,
+      parsing_context,
+      code,
+      filename,
+      line_offset,
+      column_offset,
+      cached_data_buf,
+      produce_cached_data,
+      context_extensions_buf,
+      params_buf,
+      args);
+
+  Local<Function> fn;
+  if (!maybe_fn.ToLocal(&fn)) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      errors::DecorateErrorStack(env, try_catch);
+      try_catch.ReThrow();
+    }
+    return;
+  }
+  if (fn->SetPrivate(context, env->host_defined_option_symbol(), id_symbol)
+          .IsNothing()) {
+    return;
+  }
+
+  Local<Object> result = Object::New(isolate);
+  if (result->Set(parsing_context, env->function_string(), fn).IsNothing())
+    return;
+  if (result
+          ->Set(parsing_context,
+                env->source_map_url_string(),
+                fn->GetScriptOrigin().SourceMapUrl())
+          .IsNothing())
+    return;
+
+  std::unique_ptr<ScriptCompiler::CachedData> new_cached_data;
+  if (produce_cached_data) {
+    new_cached_data.reset(ScriptCompiler::CreateCodeCacheForFunction(fn));
+  }
+  if (StoreCodeCacheResult(env,
+                           result,
+                           options,
+                           source,
+                           produce_cached_data,
+                           std::move(new_cached_data))
+          .IsNothing()) {
+    return;
+  }
+
+  args.GetReturnValue().Set(result);
+}
+
+MaybeLocal<Function> ContextifyContext::DoCompileFunction(
+    Environment* env,
+    Local<Context> parsing_context,
+    Local<String> code,
+    Local<String> filename,
+    int line_offset,
+    int column_offset,
+    Local<ArrayBufferView> cached_data_buf,
+    bool produce_cached_data,
+    Local<Array> context_extensions_buf,
+    Local<Array> params_buf,
+    const FunctionCallbackInfo<Value>& args
+) {
+  auto isolate = env->isolate();
+  auto context = env->context();
+
   // Read cache from cached data buffer
   ScriptCompiler::CachedData* cached_data = nullptr;
   if (!cached_data_buf.IsEmpty()) {
@@ -1260,7 +1323,7 @@ void ContextifyContext::CompileFunction(
   if (!params_buf.IsEmpty()) {
     for (uint32_t n = 0; n < params_buf->Length(); n++) {
       Local<Value> val;
-      if (!params_buf->Get(context, n).ToLocal(&val)) return;
+      if (!params_buf->Get(context, n).ToLocal(&val)) return v8::MaybeLocal<Function>();
       CHECK(val->IsString());
       params.push_back(val.As<String>());
     }
@@ -1276,44 +1339,7 @@ void ContextifyContext::CompileFunction(
       options,
       v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
 
-  Local<Function> fn;
-  if (!maybe_fn.ToLocal(&fn)) {
-    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-      errors::DecorateErrorStack(env, try_catch);
-      try_catch.ReThrow();
-    }
-    return;
-  }
-  if (fn->SetPrivate(context, env->host_defined_option_symbol(), id_symbol)
-          .IsNothing()) {
-    return;
-  }
-
-  Local<Object> result = Object::New(isolate);
-  if (result->Set(parsing_context, env->function_string(), fn).IsNothing())
-    return;
-  if (result
-          ->Set(parsing_context,
-                env->source_map_url_string(),
-                fn->GetScriptOrigin().SourceMapUrl())
-          .IsNothing())
-    return;
-
-  std::unique_ptr<ScriptCompiler::CachedData> new_cached_data;
-  if (produce_cached_data) {
-    new_cached_data.reset(ScriptCompiler::CreateCodeCacheForFunction(fn));
-  }
-  if (StoreCodeCacheResult(env,
-                           result,
-                           options,
-                           source,
-                           produce_cached_data,
-                           std::move(new_cached_data))
-          .IsNothing()) {
-    return;
-  }
-
-  args.GetReturnValue().Set(result);
+  return maybe_fn;
 }
 
 constexpr std::array<std::string_view, 5> commonjs_wrapper_variables = {
@@ -1328,10 +1354,11 @@ constexpr std::array<std::string_view, 3> esm_syntax_error_messages = {
     "Unexpected token 'export'",
     "Cannot use 'import.meta' outside a module"};
 
-bool ContextifyContext::ContainsModuleSyntax(
+void ContextifyContext::ContainsModuleSyntax(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
+  Local<Context> context = env->context();
 
   // Argument 1: source code
   CHECK(args[0]->IsString());
@@ -1341,23 +1368,21 @@ bool ContextifyContext::ContainsModuleSyntax(
   CHECK(args[1]->IsString());
   Local<String> filename = args[1].As<String>();
 
-  Local<Context> context = env->context();
   TryCatchScope try_catch(env);
   Context::Scope scope(context);
 
-  Local<Array> compileFunctionParameters = {
-    &code,
-    &filename,
-    0, // line_offset,
-    0, // column_offset,
-    nullptr, // cached data
-    true, // produce cached data
-    nullptr, // parsing context
-    nullptr, // context extensions
-    commonjs_wrapper_variables}; // params
-
-  MaybeLocal<Function> maybe_fn = ContextifyContext::CompileFunction(
-    compileFunctionParameters);
+  ContextifyContext::DoCompileFunction(
+    env,
+    context,
+    code,
+    filename,
+    0,
+    0,
+    Local<ArrayBufferView>(),
+    false,
+    Local<Array>(),
+    Local<Array>(),
+    args);
 
   Local<Function> fn;
   if (!maybe_fn.ToLocal(&fn)) {
@@ -1367,12 +1392,12 @@ bool ContextifyContext::ContainsModuleSyntax(
 
       for (const auto& error_message : esm_syntax_error_messages) {
         if (message.find(error_message) != std::string_view::npos) {
-          return true;
+          args.GetReturnValue().Set(true);
         }
       }
     }
   }
-  return false;
+  args.GetReturnValue().Set(false);
 }
 
 static void StartSigintWatchdog(const FunctionCallbackInfo<Value>& args) {
