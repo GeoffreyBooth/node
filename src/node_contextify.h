@@ -83,7 +83,14 @@ class ContextifyContext : public BaseObject {
   static void IsContext(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void CompileFunction(
       const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void DoCompileFunction(
+  struct DoCompileFunctionResult {
+    v8::MaybeLocal<v8::Function> maybe_fn;
+    v8::Local<v8::PrimitiveArray> host_defined_options;
+    v8::Local<v8::Symbol> id_symbol;
+    v8::ScriptCompiler::CompileOptions options;
+    v8::ScriptCompiler::Source source;
+  };
+  static DoCompileFunctionResult DoCompileFunction(
     Environment* env,
     v8::Local<v8::Context> parsing_context,
     v8::Local<v8::String> code,

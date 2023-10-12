@@ -1231,7 +1231,7 @@ void ContextifyContext::CompileFunction(
     }
   }
 
-  ContextifyContext::DoCompileFunction(
+  DoCompileFunctionResult compile_result = ContextifyContext::DoCompileFunction(
       env,
       parsing_context,
       code,
@@ -1243,9 +1243,55 @@ void ContextifyContext::CompileFunction(
       context_extensions,
       params,
       args);
+
+  MaybeLocal<Function> maybe_fn = compile_result.maybe_fn;
+  Local<PrimitiveArray> host_defined_options = compile_result.host_defined_options;
+  Local<Symbol> id_symbol = compile_result.id_symbol;
+  ScriptCompiler::CompileOptions options = compile_result.options;
+  ScriptCompiler::Source source = compile_result.source;
+
+  TryCatchScope try_catch(env);
+  Local<Function> fn;
+  if (!maybe_fn.ToLocal(&fn)) {
+    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+      errors::DecorateErrorStack(env, try_catch);
+      try_catch.ReThrow();
+    }
+    return;
+  }
+  if (fn->SetPrivate(context, env->host_defined_option_symbol(), id_symbol)
+          .IsNothing()) {
+    return;
+  }
+
+  Local<Object> result = Object::New(isolate);
+  if (result->Set(parsing_context, env->function_string(), fn).IsNothing())
+    return;
+  if (result
+          ->Set(parsing_context,
+                env->source_map_url_string(),
+                fn->GetScriptOrigin().SourceMapUrl())
+          .IsNothing())
+    return;
+
+  std::unique_ptr<ScriptCompiler::CachedData> new_cached_data;
+  if (produce_cached_data) {
+    new_cached_data.reset(ScriptCompiler::CreateCodeCacheForFunction(fn));
+  }
+  if (StoreCodeCacheResult(env,
+                           result,
+                           options,
+                           source,
+                           produce_cached_data,
+                           std::move(new_cached_data))
+          .IsNothing()) {
+    return;
+  }
+
+  args.GetReturnValue().Set(result);
 }
 
-void ContextifyContext::DoCompileFunction(
+ContextifyContext::DoCompileFunctionResult ContextifyContext::DoCompileFunction(
     Environment* env,
     Local<Context> parsing_context,
     Local<String> code,
@@ -1300,45 +1346,8 @@ void ContextifyContext::DoCompileFunction(
       options,
       v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
 
-  TryCatchScope try_catch(env);
-  Local<Function> fn;
-  if (!maybe_fn.ToLocal(&fn)) {
-    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-      errors::DecorateErrorStack(env, try_catch);
-      try_catch.ReThrow();
-    }
-    return;
-  }
-  if (fn->SetPrivate(context, env->host_defined_option_symbol(), id_symbol)
-          .IsNothing()) {
-    return;
-  }
-
-  Local<Object> result = Object::New(isolate);
-  if (result->Set(parsing_context, env->function_string(), fn).IsNothing())
-    return;
-  if (result
-          ->Set(parsing_context,
-                env->source_map_url_string(),
-                fn->GetScriptOrigin().SourceMapUrl())
-          .IsNothing())
-    return;
-
-  std::unique_ptr<ScriptCompiler::CachedData> new_cached_data;
-  if (produce_cached_data) {
-    new_cached_data.reset(ScriptCompiler::CreateCodeCacheForFunction(fn));
-  }
-  if (StoreCodeCacheResult(env,
-                           result,
-                           options,
-                           source,
-                           produce_cached_data,
-                           std::move(new_cached_data))
-          .IsNothing()) {
-    return;
-  }
-
-  args.GetReturnValue().Set(result);
+  return DoCompileFunctionResult{maybe_fn, host_defined_options,
+    id_symbol, options, source};
 }
 
 constexpr std::array<std::string_view, 5> commonjs_wrapper_variables = {
@@ -1355,47 +1364,47 @@ constexpr std::array<std::string_view, 3> esm_syntax_error_messages = {
 
 void ContextifyContext::ContainsModuleSyntax(
     const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
-  Isolate* isolate = env->isolate();
-  Local<Context> context = env->context();
+  // Environment* env = Environment::GetCurrent(args);
+  // Isolate* isolate = env->isolate();
+  // Local<Context> context = env->context();
 
-  // Argument 1: source code
-  CHECK(args[0]->IsString());
-  Local<String> code = args[0].As<String>();
+  // // Argument 1: source code
+  // CHECK(args[0]->IsString());
+  // Local<String> code = args[0].As<String>();
 
-  // Argument 2: filename
-  CHECK(args[1]->IsString());
-  Local<String> filename = args[1].As<String>();
+  // // Argument 2: filename
+  // CHECK(args[1]->IsString());
+  // Local<String> filename = args[1].As<String>();
 
-  TryCatchScope try_catch(env);
-  Context::Scope scope(context);
+  // TryCatchScope try_catch(env);
+  // Context::Scope scope(context);
 
-  ContextifyContext::DoCompileFunction(
-    env,
-    context,
-    code,
-    filename,
-    0,
-    0,
-    nullptr,
-    false,
-    nullptr,
-    nullptr,
-    args);
+  // ContextifyContext::DoCompileFunction(
+  //   env,
+  //   context,
+  //   code,
+  //   filename,
+  //   0,
+  //   0,
+  //   nullptr,
+  //   false,
+  //   nullptr,
+  //   nullptr,
+  //   args);
 
-  Local<Function> fn;
-  if (!maybe_fn.ToLocal(&fn)) {
-    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-      Utf8Value message_value(env->isolate(), try_catch.Message()->Get());
-      auto message = message_value.ToStringView();
+  // Local<Function> fn;
+  // if (!maybe_fn.ToLocal(&fn)) {
+  //   if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+  //     Utf8Value message_value(env->isolate(), try_catch.Message()->Get());
+  //     auto message = message_value.ToStringView();
 
-      for (const auto& error_message : esm_syntax_error_messages) {
-        if (message.find(error_message) != std::string_view::npos) {
-          args.GetReturnValue().Set(true);
-        }
-      }
-    }
-  }
+  //     for (const auto& error_message : esm_syntax_error_messages) {
+  //       if (message.find(error_message) != std::string_view::npos) {
+  //         args.GetReturnValue().Set(true);
+  //       }
+  //     }
+  //   }
+  // }
   args.GetReturnValue().Set(false);
 }
 
