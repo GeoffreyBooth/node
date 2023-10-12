@@ -83,17 +83,17 @@ class ContextifyContext : public BaseObject {
   static void IsContext(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void CompileFunction(
       const v8::FunctionCallbackInfo<v8::Value>& args);
-  static v8::MaybeLocal<v8::Function> DoCompileFunction(
+  static void DoCompileFunction(
     Environment* env,
     v8::Local<v8::Context> parsing_context,
     v8::Local<v8::String> code,
     v8::Local<v8::String> filename,
     int line_offset,
     int column_offset,
-    v8::Local<v8::ArrayBufferView> cached_data_buf,
+    v8::ScriptCompiler::CachedData* cached_data,
     bool produce_cached_data,
-    v8::Local<v8::Array> context_extensions_buf,
-    v8::Local<v8::Array> params_buf,
+    std::vector<v8::Local<v8::Object>> context_extensions,
+    std::vector<v8::Local<v8::String>> params,
     const v8::FunctionCallbackInfo<v8::Value>& args);
   static void ContainsModuleSyntax(
       const v8::FunctionCallbackInfo<v8::Value>& args);

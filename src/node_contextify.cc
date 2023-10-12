@@ -1144,6 +1144,7 @@ ContextifyScript::~ContextifyScript() {}
 void ContextifyContext::CompileFunction(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
   Local<Context> context = env->context();
 
   // Argument 1: source code
@@ -1200,19 +1201,106 @@ void ContextifyContext::CompileFunction(
     params_buf = args[8].As<Array>();
   }
 
-  auto maybe_fn = ContextifyContext::DoCompileFunction(
+  // Read cache from cached data buffer
+  ScriptCompiler::CachedData* cached_data = nullptr;
+  if (!cached_data_buf.IsEmpty()) {
+    uint8_t* data = static_cast<uint8_t*>(cached_data_buf->Buffer()->Data());
+    cached_data = new ScriptCompiler::CachedData(
+      data + cached_data_buf->ByteOffset(), cached_data_buf->ByteLength());
+  }
+
+  // Read context extensions from buffer
+  std::vector<Local<Object>> context_extensions;
+  if (!context_extensions_buf.IsEmpty()) {
+    for (uint32_t n = 0; n < context_extensions_buf->Length(); n++) {
+      Local<Value> val;
+      if (!context_extensions_buf->Get(context, n).ToLocal(&val)) return;
+      CHECK(val->IsObject());
+      context_extensions.push_back(val.As<Object>());
+    }
+  }
+
+  // Read params from params buffer
+  std::vector<Local<String>> params;
+  if (!params_buf.IsEmpty()) {
+    for (uint32_t n = 0; n < params_buf->Length(); n++) {
+      Local<Value> val;
+      if (!params_buf->Get(context, n).ToLocal(&val)) return;
+      CHECK(val->IsString());
+      params.push_back(val.As<String>());
+    }
+  }
+
+  ContextifyContext::DoCompileFunction(
       env,
       parsing_context,
       code,
       filename,
       line_offset,
       column_offset,
-      cached_data_buf,
+      cached_data,
       produce_cached_data,
-      context_extensions_buf,
-      params_buf,
+      context_extensions,
+      params,
       args);
+}
 
+void ContextifyContext::DoCompileFunction(
+    Environment* env,
+    Local<Context> parsing_context,
+    Local<String> code,
+    Local<String> filename,
+    int line_offset,
+    int column_offset,
+    ScriptCompiler::CachedData* cached_data,
+    bool produce_cached_data,
+    std::vector<Local<Object>> context_extensions,
+    std::vector<Local<String>> params,
+    const FunctionCallbackInfo<Value>& args
+) {
+  Isolate* isolate = env->isolate();
+  Local<Context> context = env->context();
+
+  // Set host_defined_options
+  Local<PrimitiveArray> host_defined_options =
+      PrimitiveArray::New(isolate, loader::HostDefinedOptions::kLength);
+  Local<Symbol> id_symbol = Symbol::New(isolate, filename);
+  host_defined_options->Set(
+      isolate, loader::HostDefinedOptions::kID, id_symbol);
+
+  ScriptOrigin origin(isolate,
+                      filename,
+                      line_offset,       // line offset
+                      column_offset,     // column offset
+                      true,              // is cross origin
+                      -1,                // script id
+                      Local<Value>(),    // source map URL
+                      false,             // is opaque (?)
+                      false,             // is WASM
+                      false,             // is ES Module
+                      host_defined_options);
+
+  ScriptCompiler::Source source(code, origin, cached_data);
+  ScriptCompiler::CompileOptions options;
+  if (source.GetCachedData() == nullptr) {
+    options = ScriptCompiler::kNoCompileOptions;
+  } else {
+    options = ScriptCompiler::kConsumeCodeCache;
+  }
+
+  Context::Scope scope(parsing_context);
+
+  MaybeLocal<Function> maybe_fn = ScriptCompiler::CompileFunction(
+      parsing_context,
+      &source,
+      params.size(),
+      params.data(),
+      context_extensions.size(),
+      context_extensions.data(),
+      options,
+      v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
+
+  TryCatchScope try_catch(env);
   Local<Function> fn;
   if (!maybe_fn.ToLocal(&fn)) {
     if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
@@ -1253,95 +1341,6 @@ void ContextifyContext::CompileFunction(
   args.GetReturnValue().Set(result);
 }
 
-MaybeLocal<Function> ContextifyContext::DoCompileFunction(
-    Environment* env,
-    Local<Context> parsing_context,
-    Local<String> code,
-    Local<String> filename,
-    int line_offset,
-    int column_offset,
-    Local<ArrayBufferView> cached_data_buf,
-    bool produce_cached_data,
-    Local<Array> context_extensions_buf,
-    Local<Array> params_buf,
-    const FunctionCallbackInfo<Value>& args
-) {
-  auto isolate = env->isolate();
-  auto context = env->context();
-
-  // Read cache from cached data buffer
-  ScriptCompiler::CachedData* cached_data = nullptr;
-  if (!cached_data_buf.IsEmpty()) {
-    uint8_t* data = static_cast<uint8_t*>(cached_data_buf->Buffer()->Data());
-    cached_data = new ScriptCompiler::CachedData(
-      data + cached_data_buf->ByteOffset(), cached_data_buf->ByteLength());
-  }
-
-  // Set host_defined_options
-  Local<PrimitiveArray> host_defined_options =
-      PrimitiveArray::New(isolate, loader::HostDefinedOptions::kLength);
-  Local<Symbol> id_symbol = Symbol::New(isolate, filename);
-  host_defined_options->Set(
-      isolate, loader::HostDefinedOptions::kID, id_symbol);
-
-  ScriptOrigin origin(isolate,
-                      filename,
-                      line_offset,       // line offset
-                      column_offset,     // column offset
-                      true,              // is cross origin
-                      -1,                // script id
-                      Local<Value>(),    // source map URL
-                      false,             // is opaque (?)
-                      false,             // is WASM
-                      false,             // is ES Module
-                      host_defined_options);
-
-  ScriptCompiler::Source source(code, origin, cached_data);
-  ScriptCompiler::CompileOptions options;
-  if (source.GetCachedData() == nullptr) {
-    options = ScriptCompiler::kNoCompileOptions;
-  } else {
-    options = ScriptCompiler::kConsumeCodeCache;
-  }
-
-  TryCatchScope try_catch(env);
-  Context::Scope scope(parsing_context);
-
-  // Read context extensions from buffer
-  std::vector<Local<Object>> context_extensions;
-  if (!context_extensions_buf.IsEmpty()) {
-    for (uint32_t n = 0; n < context_extensions_buf->Length(); n++) {
-      Local<Value> val;
-      if (!context_extensions_buf->Get(context, n).ToLocal(&val)) return;
-      CHECK(val->IsObject());
-      context_extensions.push_back(val.As<Object>());
-    }
-  }
-
-  // Read params from params buffer
-  std::vector<Local<String>> params;
-  if (!params_buf.IsEmpty()) {
-    for (uint32_t n = 0; n < params_buf->Length(); n++) {
-      Local<Value> val;
-      if (!params_buf->Get(context, n).ToLocal(&val)) return v8::MaybeLocal<Function>();
-      CHECK(val->IsString());
-      params.push_back(val.As<String>());
-    }
-  }
-
-  MaybeLocal<Function> maybe_fn = ScriptCompiler::CompileFunction(
-      parsing_context,
-      &source,
-      params.size(),
-      params.data(),
-      context_extensions.size(),
-      context_extensions.data(),
-      options,
-      v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
-
-  return maybe_fn;
-}
-
 constexpr std::array<std::string_view, 5> commonjs_wrapper_variables = {
     "exports",
     "require",
@@ -1378,10 +1377,10 @@ void ContextifyContext::ContainsModuleSyntax(
     filename,
     0,
     0,
-    Local<ArrayBufferView>(),
+    nullptr,
     false,
-    Local<Array>(),
-    Local<Array>(),
+    nullptr,
+    nullptr,
     args);
 
   Local<Function> fn;
