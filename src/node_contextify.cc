@@ -1192,7 +1192,7 @@ void ContextifyContext::CompileFunction(
     params_buf = args[8].As<Array>();
   }
 
-  // Argument 9: host-defined option symbol
+  // Argument 10: host-defined option symbol
   CHECK(args[9]->IsSymbol());
   Local<Symbol> id_symbol = args[9].As<Symbol>();
 
