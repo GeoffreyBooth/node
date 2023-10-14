@@ -1206,31 +1206,10 @@ void ContextifyContext::CompileFunction(
       data + cached_data_buf->ByteOffset(), cached_data_buf->ByteLength());
   }
 
-  // Set host_defined_options
-  Local<PrimitiveArray> host_defined_options =
-      PrimitiveArray::New(isolate, loader::HostDefinedOptions::kLength);
-  host_defined_options->Set(
-      isolate, loader::HostDefinedOptions::kID, id_symbol);
-
-  ScriptOrigin origin(isolate,
-                      filename,
-                      line_offset,       // line offset
-                      column_offset,     // column offset
-                      true,              // is cross origin
-                      -1,                // script id
-                      Local<Value>(),    // source map URL
-                      false,             // is opaque (?)
-                      false,             // is WASM
-                      false,             // is ES Module
-                      host_defined_options);
-
-  ScriptCompiler::Source source = ScriptCompiler::Source(code, origin, cached_data);
-  ScriptCompiler::CompileOptions options;
-  if (source.GetCachedData() == nullptr) {
-    options = ScriptCompiler::kNoCompileOptions;
-  } else {
-    options = ScriptCompiler::kConsumeCodeCache;
-  }
+  Local<PrimitiveArray> host_defined_options = GetHostDefinedOptions(isolate, id_symbol);
+  ScriptCompiler::Source source = GetCommonJSSourceInstance(
+    isolate, code, filename, line_offset, column_offset, host_defined_options, cached_data);
+  ScriptCompiler::CompileOptions options = GetCompileOptions(source);
 
   Context::Scope scope(parsing_context);
 
@@ -1277,6 +1256,49 @@ void ContextifyContext::CompileFunction(
     return;
   }
   args.GetReturnValue().Set(result);
+}
+
+Local<PrimitiveArray> ContextifyContext::GetHostDefinedOptions(
+    Isolate* isolate,
+    Local<Symbol> id_symbol) {
+  Local<PrimitiveArray> host_defined_options =
+      PrimitiveArray::New(isolate, loader::HostDefinedOptions::kLength);
+  host_defined_options->Set(
+      isolate, loader::HostDefinedOptions::kID, id_symbol);
+  return host_defined_options;
+}
+
+ScriptCompiler::Source ContextifyContext::GetCommonJSSourceInstance(
+    Isolate* isolate,
+    Local<String> code,
+    Local<String> filename,
+    int line_offset,
+    int column_offset,
+    Local<PrimitiveArray> host_defined_options,
+    ScriptCompiler::CachedData* cached_data) {
+  ScriptOrigin origin(isolate,
+                      filename,
+                      line_offset,                          // line offset
+                      column_offset,                        // column offset
+                      true,                                 // is cross origin
+                      -1,                                   // script id
+                      Local<Value>(),                       // source map URL
+                      false,                                // is opaque (?)
+                      false,                                // is WASM
+                      false,                                // is ES Module
+                      host_defined_options);
+  return ScriptCompiler::Source(code, origin, cached_data);
+}
+
+ScriptCompiler::CompileOptions ContextifyContext::GetCompileOptions(
+    ScriptCompiler::Source& source) {
+  ScriptCompiler::CompileOptions options;
+  if (source.GetCachedData() != nullptr) {
+    options = ScriptCompiler::kConsumeCodeCache;
+  } else {
+    options = ScriptCompiler::kNoCompileOptions;
+  }
+  return options;
 }
 
 Local<Object> ContextifyContext::CompileFunctionAndCacheResult(
@@ -1366,38 +1388,15 @@ void ContextifyContext::ContainsModuleSyntax(
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
   Local<Context> context = env->context();
+
   // TODO: Centralize this rather than matching the logic in cjs/loader.js and translators.js
   Local<Symbol> id_symbol = (String::Concat(isolate,
       String::NewFromUtf8(isolate, "cjs:").ToLocalChecked(), filename)).As<Symbol>();
 
-  // TODO: Abstract this into a separate function
-  // Set host_defined_options
-  Local<PrimitiveArray> host_defined_options =
-      PrimitiveArray::New(isolate, loader::HostDefinedOptions::kLength);
-  host_defined_options->Set(
-      isolate, loader::HostDefinedOptions::kID, id_symbol);
-
-  ScriptOrigin origin(isolate,
-                      filename,
-                      0,                 // line offset
-                      0,                 // column offset
-                      true,              // is cross origin
-                      -1,                // script id
-                      Local<Value>(),    // source map URL
-                      false,             // is opaque (?)
-                      false,             // is WASM
-                      false,             // is ES Module
-                      host_defined_options);
-
-  ScriptCompiler::CachedData* cached_data = nullptr;
-  ScriptCompiler::Source source = ScriptCompiler::Source(code, origin, cached_data);
-  ScriptCompiler::CompileOptions options;
-  if (source.GetCachedData() == nullptr) {
-    options = ScriptCompiler::kNoCompileOptions;
-  } else {
-    options = ScriptCompiler::kConsumeCodeCache;
-  }
-  // End TODO
+  Local<PrimitiveArray> host_defined_options = GetHostDefinedOptions(isolate, id_symbol);
+  ScriptCompiler::Source source = GetCommonJSSourceInstance(
+    isolate, code, filename, 0, 0, host_defined_options, nullptr);
+  ScriptCompiler::CompileOptions options = GetCompileOptions(source);
 
   std::vector<Local<String>> params = {
     String::NewFromUtf8(isolate, "exports").ToLocalChecked(),
