@@ -25,3 +25,7 @@ only as a semver-major change, unless the related feature or project is
 documented as experimental. In addition, Node.js includes external projects as
 internal dependencies. These may be replaced or removed at any time, provided
 that doing so is not a breaking change.
+
+Software that is run via a standalone command separate from Node.js shall not be
+included in the Node.js distribution, with the exception of `npm` as it is
+provided as a way for users to install such software.
