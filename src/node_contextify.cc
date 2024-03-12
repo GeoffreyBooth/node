@@ -46,6 +46,7 @@ using v8::EscapableHandleScope;
 using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
+using v8::Global;
 using v8::HandleScope;
 using v8::IndexedPropertyHandlerConfiguration;
 using v8::Int32;
@@ -109,7 +110,7 @@ Local<Name> Uint32ToName(Local<Context> context, uint32_t index) {
 
 }  // anonymous namespace
 
-static std::unordered_map<std::string, Local<Function>> compile_results_cache;
+static std::unordered_map<std::string, Global<Function>> compile_results_cache;
 
 BaseObjectPtr<ContextifyContext> ContextifyContext::New(
     Environment* env, Local<Object> sandbox_obj, ContextOptions* options) {
@@ -1367,7 +1368,9 @@ Local<Object> ContextifyContext::CompileFunctionAndCacheResult(
   Local<Function> fn;
   if (maybe_fn.ToLocal(&fn)) { // Only cache successful compilations
     std::string cache_key = std::string(*Utf8Value(isolate, script_id));
-    compile_results_cache[cache_key] = fn;
+    fprintf(stderr, "caching: %s\n", cache_key.c_str());
+    Global<Function> fn_global(isolate, fn);
+    compile_results_cache[cache_key].Reset(isolate, fn_global);
   } else {
     if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
       errors::DecorateErrorStack(env, try_catch);
@@ -1634,8 +1637,11 @@ static void CompileFunctionForCJSLoader(
   std::string cache_key = std::string(*Utf8Value(isolate, script_id));
   Local<Function> fn;
   if (compile_results_cache.count(cache_key) > 0) {
-    fn = compile_results_cache[cache_key];
+    fprintf(stdout, "Using cached result for %s\n", cache_key.c_str());
+    fn = compile_results_cache[cache_key].Get(isolate);
+    compile_results_cache.erase(cache_key);
   } else {
+    fprintf(stdout, "NOT using cached result for %s\n", cache_key.c_str());
     TryCatchScope try_catch(env);
     MaybeLocal<Function> maybe_fn;
     maybe_fn = ScriptCompiler::CompileFunction(
