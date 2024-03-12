@@ -7,6 +7,8 @@
 #include "node_context_data.h"
 #include "node_errors.h"
 
+#include <unordered_map>
+
 namespace node {
 class ExternalReferenceRegistry;
 
@@ -92,7 +94,7 @@ class ContextifyContext : public BaseObject {
       std::vector<v8::Local<v8::Object>> context_extensions,
       v8::ScriptCompiler::CompileOptions options,
       bool produce_cached_data,
-      v8::Local<v8::Symbol> id_symbol,
+      v8::Local<v8::String> script_id,
       const errors::TryCatchScope& try_catch);
   static v8::ScriptCompiler::Source GetCommonJSSourceInstance(
       v8::Isolate* isolate,

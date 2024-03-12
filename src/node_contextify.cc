@@ -109,6 +109,8 @@ Local<Name> Uint32ToName(Local<Context> context, uint32_t index) {
 
 }  // anonymous namespace
 
+static std::unordered_map<std::string, Local<Function>> compile_results_cache;
+
 BaseObjectPtr<ContextifyContext> ContextifyContext::New(
     Environment* env, Local<Object> sandbox_obj, ContextOptions* options) {
   HandleScope scope(env->isolate());
@@ -1234,6 +1236,11 @@ void ContextifyContext::CompileFunction(
       data + cached_data_buf->ByteOffset(), cached_data_buf->ByteLength());
   }
 
+  // TODO(geoffreybooth): Centralize this rather than matching the logic in
+  // cjs/loader.js and translators.js
+  Local<String> script_id = String::Concat(
+      isolate, String::NewFromUtf8(isolate, "cjs:").ToLocalChecked(), filename);
+
   Local<PrimitiveArray> host_defined_options =
       GetHostDefinedOptions(isolate, id_symbol);
   ScriptCompiler::Source source =
@@ -1278,7 +1285,7 @@ void ContextifyContext::CompileFunction(
                                                        context_extensions,
                                                        options,
                                                        produce_cached_data,
-                                                       id_symbol,
+                                                       script_id,
                                                        try_catch);
 
   if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
@@ -1343,7 +1350,7 @@ Local<Object> ContextifyContext::CompileFunctionAndCacheResult(
     std::vector<Local<Object>> context_extensions,
     ScriptCompiler::CompileOptions options,
     bool produce_cached_data,
-    Local<Symbol> id_symbol,
+    Local<String> script_id,
     const TryCatchScope& try_catch) {
   MaybeLocal<Function> maybe_fn = ScriptCompiler::CompileFunction(
       parsing_context,
@@ -1355,8 +1362,13 @@ Local<Object> ContextifyContext::CompileFunctionAndCacheResult(
       options,
       v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
 
+  Isolate* isolate = env->isolate();
+
   Local<Function> fn;
-  if (!maybe_fn.ToLocal(&fn)) {
+  if (maybe_fn.ToLocal(&fn)) { // Only cache successful compilations
+    std::string cache_key = std::string(*Utf8Value(isolate, script_id));
+    compile_results_cache[cache_key] = fn;
+  } else {
     if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
       errors::DecorateErrorStack(env, try_catch);
       return Object::New(env->isolate());
@@ -1364,12 +1376,12 @@ Local<Object> ContextifyContext::CompileFunctionAndCacheResult(
   }
 
   Local<Context> context = env->context();
+  Local<Symbol> id_symbol = Symbol::New(isolate, script_id);
   if (fn->SetPrivate(context, env->host_defined_option_symbol(), id_symbol)
           .IsNothing()) {
     return Object::New(env->isolate());
   }
 
-  Isolate* isolate = env->isolate();
   Local<Object> result = Object::New(isolate);
   if (result->Set(parsing_context, env->function_string(), fn).IsNothing())
     return Object::New(env->isolate());
@@ -1476,7 +1488,7 @@ void ContextifyContext::ContainsModuleSyntax(
                                                    std::vector<Local<Object>>(),
                                                    options,
                                                    true,
-                                                   id_symbol,
+                                                   script_id,
                                                    try_catch);
 
   bool should_retry_as_esm = false;
@@ -1613,30 +1625,39 @@ static void CompileFunctionForCJSLoader(
 #endif
   ScriptCompiler::Source source(code, origin, cached_data);
 
-  TryCatchScope try_catch(env);
-
   std::vector<Local<String>> params = GetCJSParameters(env->isolate_data());
 
-  MaybeLocal<Function> maybe_fn = ScriptCompiler::CompileFunction(
-      context,
-      &source,
-      params.size(),
-      params.data(),
-      0,       /* context extensions size */
-      nullptr, /* context extensions data */
-      // TODO(joyeecheung): allow optional eager compilation.
-      cached_data == nullptr ? ScriptCompiler::kNoCompileOptions
-                             : ScriptCompiler::kConsumeCodeCache,
-      v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
-
+  // TODO(geoffreybooth): Centralize this rather than matching the logic in
+  // cjs/loader.js and translators.js
+  Local<String> script_id = String::Concat(
+      isolate, String::NewFromUtf8(isolate, "cjs:").ToLocalChecked(), filename);
+  std::string cache_key = std::string(*Utf8Value(isolate, script_id));
   Local<Function> fn;
-  if (!maybe_fn.ToLocal(&fn)) {
-    if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
-      errors::DecorateErrorStack(env, try_catch);
-      if (!try_catch.HasTerminated()) {
-        try_catch.ReThrow();
+  if (compile_results_cache.count(cache_key) > 0) {
+    fn = compile_results_cache[cache_key];
+  } else {
+    TryCatchScope try_catch(env);
+    MaybeLocal<Function> maybe_fn;
+    maybe_fn = ScriptCompiler::CompileFunction(
+        context,
+        &source,
+        params.size(),
+        params.data(),
+        0,       /* context extensions size */
+        nullptr, /* context extensions data */
+        // TODO(joyeecheung): allow optional eager compilation.
+        cached_data == nullptr ? ScriptCompiler::kNoCompileOptions
+                              : ScriptCompiler::kConsumeCodeCache,
+        v8::ScriptCompiler::NoCacheReason::kNoCacheNoReason);
+
+    if (!maybe_fn.ToLocal(&fn)) {
+      if (try_catch.HasCaught() && !try_catch.HasTerminated()) {
+        errors::DecorateErrorStack(env, try_catch);
+        if (!try_catch.HasTerminated()) {
+          try_catch.ReThrow();
+        }
+        return;
       }
-      return;
     }
   }
 
